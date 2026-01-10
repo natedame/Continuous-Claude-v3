@@ -138,7 +138,7 @@ def find_python() -> str | None:
     return None
 
 
-def find_hook_script(name: str) -> tuple[Path | None, Path | None]:
+def find_hook_script(name: str) -> tuple[Path | None, Path | None, Path | None]:
     """Find the hook script file.
 
     Searches project-specific hooks first, then user hooks.
@@ -148,25 +148,42 @@ def find_hook_script(name: str) -> tuple[Path | None, Path | None]:
         name: Hook name (e.g., "skill-activation-prompt")
 
     Returns:
-        Tuple of (script_path, hooks_dir) or (None, None) if not found
+        Tuple of (script_path, hooks_dir, project_root) or (None, None, None) if not found
     """
     for hooks_dir in get_hooks_dirs():
+        # Determine project root for this hooks dir
+        project_root = None
+        if hooks_dir == Path.home() / ".claude" / "hooks":
+            # User-level hooks: no specific project root, use home dir
+            project_root = Path.home()
+        else:
+            # Project hooks: extract from hooks_dir path
+            # hooks_dir is like: /path/to/project/.claude/hooks
+            # project_root should be: /path/to/project
+            # Try resolving via CLAUDE_PROJECT_DIR first
+            env_project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
+            if env_project_dir:
+                project_root = Path(env_project_dir)
+            else:
+                # Fallback: go up two levels from .claude/hooks
+                project_root = hooks_dir.parent.parent
+
         # Try compiled .mjs first
         mjs_path = hooks_dir / "dist" / f"{name}.mjs"
         if mjs_path.exists():
-            return mjs_path, hooks_dir
+            return mjs_path, hooks_dir, project_root
 
         # Fallback to TypeScript source
         ts_path = hooks_dir / "src" / f"{name}.ts"
         if ts_path.exists():
-            return ts_path, hooks_dir
+            return ts_path, hooks_dir, project_root
 
         # Python scripts in root hooks directory
         py_path = hooks_dir / f"{name}.py"
         if py_path.exists():
-            return py_path, hooks_dir
+            return py_path, hooks_dir, project_root
 
-    return None, None
+    return None, None, None
 
 
 def run_hook(
@@ -187,7 +204,7 @@ def run_hook(
         Dict with keys: returncode, stdout, stderr
     """
     # Find hook script first
-    script_path, hooks_dir = find_hook_script(name)
+    script_path, hooks_dir, project_root = find_hook_script(name)
     if not script_path:
         search_dirs = ", ".join(str(d) for d in get_hooks_dirs())
         return {
@@ -237,7 +254,7 @@ def run_hook(
             text=True,
             timeout=timeout,
             env=run_env,
-            cwd=str(hooks_dir),  # Run from the hooks dir where script was found
+            cwd=str(project_root),  # Run from project root to avoid path doubling
         )
         return {
             "returncode": result.returncode,
