@@ -100,93 +100,100 @@ function parseTranscript(transcriptPath) {
 }
 function generateAutoHandoff(summary, sessionName) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const dateOnly = timestamp.split("T")[0];
   const lines = [];
+  const inProgress = summary.lastTodos.filter((t) => t.status === "in_progress");
+  const pending = summary.lastTodos.filter((t) => t.status === "pending");
+  const completed = summary.lastTodos.filter((t) => t.status === "completed");
+  const currentTask = inProgress[0]?.content || pending[0]?.content || "Continue from auto-compact";
+  const goalSummary = completed.length > 0 ? `Completed ${completed.length} task(s) before auto-compact` : "Session auto-compacted";
   lines.push("---");
-  lines.push(`date: ${timestamp}`);
-  lines.push("type: auto-handoff");
-  lines.push("trigger: pre-compact-auto");
   lines.push(`session: ${sessionName}`);
+  lines.push(`date: ${dateOnly}`);
+  lines.push("status: partial");
+  lines.push("outcome: PARTIAL_PLUS");
   lines.push("---");
   lines.push("");
-  lines.push("# Auto-Handoff (PreCompact)");
+  lines.push(`goal: ${goalSummary}`);
+  lines.push(`now: ${currentTask}`);
+  lines.push("test: # No test command captured");
   lines.push("");
-  lines.push("This handoff was automatically generated before context compaction.");
-  lines.push("");
-  lines.push("## In Progress");
-  lines.push("");
-  if (summary.lastTodos.length > 0) {
-    const inProgress = summary.lastTodos.filter((t) => t.status === "in_progress");
-    const pending = summary.lastTodos.filter((t) => t.status === "pending");
-    const completed = summary.lastTodos.filter((t) => t.status === "completed");
-    if (inProgress.length > 0) {
-      lines.push("**Active:**");
-      inProgress.forEach((t) => lines.push(`- [>] ${t.content}`));
-      lines.push("");
-    }
-    if (pending.length > 0) {
-      lines.push("**Pending:**");
-      pending.forEach((t) => lines.push(`- [ ] ${t.content}`));
-      lines.push("");
-    }
-    if (completed.length > 0) {
-      lines.push("**Completed this session:**");
-      completed.forEach((t) => lines.push(`- [x] ${t.content}`));
-      lines.push("");
-    }
-  } else {
-    lines.push("No TodoWrite state captured.");
-    lines.push("");
-  }
-  lines.push("## Recent Actions");
-  lines.push("");
-  if (summary.recentToolCalls.length > 0) {
-    summary.recentToolCalls.forEach((tc) => {
-      const status = tc.success ? "OK" : "FAILED";
-      const inputSummary = tc.input ? ` - ${JSON.stringify(tc.input).substring(0, 80)}...` : "";
-      lines.push(`- ${tc.name} [${status}]${inputSummary}`);
+  lines.push("done_this_session:");
+  if (completed.length > 0) {
+    completed.forEach((t) => {
+      lines.push(`  - task: "${t.content.replace(/"/g, '\\"')}"`);
+      lines.push("    files: []");
     });
   } else {
-    lines.push("No tool calls recorded.");
+    lines.push('  - task: "Session started"');
+    lines.push("    files: []");
   }
   lines.push("");
-  lines.push("## Files Modified");
-  lines.push("");
-  if (summary.filesModified.length > 0) {
-    summary.filesModified.forEach((f) => lines.push(`- ${f}`));
-  } else {
-    lines.push("No files modified.");
-  }
-  lines.push("");
+  lines.push("blockers:");
   if (summary.errorsEncountered.length > 0) {
-    lines.push("## Errors Encountered");
-    lines.push("");
-    summary.errorsEncountered.forEach((e) => {
-      lines.push("```");
-      lines.push(e);
-      lines.push("```");
+    summary.errorsEncountered.slice(0, 3).forEach((e) => {
+      const safeError = e.replace(/"/g, '\\"').substring(0, 100);
+      lines.push(`  - "${safeError}"`);
     });
-    lines.push("");
-  }
-  lines.push("## Last Context");
-  lines.push("");
-  if (summary.lastAssistantMessage) {
-    lines.push("```");
-    lines.push(summary.lastAssistantMessage);
-    if (summary.lastAssistantMessage.length >= 500) {
-      lines.push("[... truncated]");
-    }
-    lines.push("```");
   } else {
-    lines.push("No assistant message captured.");
+    lines.push("  []");
   }
   lines.push("");
-  lines.push("## Suggested Next Steps");
+  lines.push("questions:");
+  if (pending.length > 0) {
+    pending.slice(0, 3).forEach((t) => {
+      lines.push(`  - "Resume: ${t.content.replace(/"/g, '\\"')}"`);
+    });
+  } else {
+    lines.push("  []");
+  }
   lines.push("");
-  lines.push('1. Review the "In Progress" section for current task state');
-  lines.push('2. Check "Errors Encountered" if debugging issues');
-  lines.push("3. Read modified files to understand recent changes");
-  lines.push("4. Continue from where session left off");
+  lines.push("decisions:");
+  lines.push('  - auto_compact: "Context limit reached, auto-compacted"');
   lines.push("");
+  lines.push("findings:");
+  lines.push(`  - tool_calls: "${summary.recentToolCalls.length} recent tool calls"`);
+  lines.push(`  - files_modified: "${summary.filesModified.length} files changed"`);
+  lines.push("");
+  lines.push("worked:");
+  const successfulTools = summary.recentToolCalls.filter((t) => t.success);
+  if (successfulTools.length > 0) {
+    lines.push(`  - "${successfulTools.map((t) => t.name).join(", ")} completed successfully"`);
+  } else {
+    lines.push("  []");
+  }
+  lines.push("");
+  lines.push("failed:");
+  const failedTools = summary.recentToolCalls.filter((t) => !t.success);
+  if (failedTools.length > 0) {
+    lines.push(`  - "${failedTools.map((t) => t.name).join(", ")} encountered errors"`);
+  } else {
+    lines.push("  []");
+  }
+  lines.push("");
+  lines.push("next:");
+  if (inProgress.length > 0) {
+    lines.push(`  - "Continue: ${inProgress[0].content.replace(/"/g, '\\"')}"`);
+  }
+  if (pending.length > 0) {
+    pending.slice(0, 2).forEach((t) => {
+      lines.push(`  - "${t.content.replace(/"/g, '\\"')}"`);
+    });
+  }
+  if (inProgress.length === 0 && pending.length === 0) {
+    lines.push('  - "Review session state and continue"');
+  }
+  lines.push("");
+  lines.push("files:");
+  lines.push("  created: []");
+  lines.push("  modified:");
+  if (summary.filesModified.length > 0) {
+    summary.filesModified.slice(0, 10).forEach((f) => {
+      lines.push(`    - "${f}"`);
+    });
+  } else {
+    lines.push("    []");
+  }
   return lines.join("\n");
 }
 var isMainModule = import.meta.url === `file://${process.argv[1]}`;
@@ -235,7 +242,7 @@ async function main() {
       const handoffDir = path.join(projectDir, "thoughts", "shared", "handoffs", sessionName);
       fs2.mkdirSync(handoffDir, { recursive: true });
       const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      handoffFile = `auto-handoff-${timestamp}.md`;
+      handoffFile = `auto-handoff-${timestamp}.yaml`;
       const handoffPath = path.join(handoffDir, handoffFile);
       fs2.writeFileSync(handoffPath, handoffContent);
       const briefSummary = generateAutoSummary(projectDir, input.session_id);
@@ -248,7 +255,7 @@ async function main() {
         appendToLedger(ledgerPath, briefSummary);
       }
     }
-    const message = handoffFile ? `[PreCompact:auto] Created ${handoffFile} in thoughts/shared/handoffs/${sessionName}/` : `[PreCompact:auto] Session summary auto-appended to ${mostRecent}`;
+    const message = handoffFile ? `[PreCompact:auto] Created YAML handoff: thoughts/shared/handoffs/${sessionName}/${handoffFile}` : `[PreCompact:auto] Session summary auto-appended to ${mostRecent}`;
     const output = {
       continue: true,
       systemMessage: message
