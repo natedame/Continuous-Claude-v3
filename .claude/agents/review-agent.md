@@ -235,7 +235,7 @@ After writing the full report, return a brief summary:
 
 **Gaps Found:** X (Y blocking)
 
-**Report:** .claude/cache/agents/review-agent/latest-output.md
+**Report:** .claude/cache/agents/review-agent/output-{timestamp}.md
 
 [If FAIL] **Action Required:** Address P0 gaps before proceeding
 [If PASS] **Ready for:** Handoff creation
