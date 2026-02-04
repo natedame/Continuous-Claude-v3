@@ -1,4 +1,3 @@
-"use strict";
 /**
  * Pattern Router - Shared module for pattern detection in hooks
  *
@@ -9,26 +8,11 @@
  * Part of the pattern-aware hooks infrastructure.
  * See: thoughts/shared/plans/2025-12-28-pattern-aware-hooks.md
  */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.SAFE_ID_PATTERN = exports.SUPPORTED_PATTERNS = void 0;
-exports.detectPattern = detectPattern;
-exports.isValidId = isValidId;
 /**
  * All supported orchestration patterns.
  */
-exports.SUPPORTED_PATTERNS = [
-    'swarm',
-    'jury',
-    'pipeline',
-    'generator_critic',
-    'hierarchical',
-    'map_reduce',
-    'blackboard',
-    'circuit_breaker',
-    'chain_of_responsibility',
-    'adversarial',
-    'event_driven',
-];
+export declare const SUPPORTED_PATTERNS: readonly ["swarm", "jury", "pipeline", "generator_critic", "hierarchical", "map_reduce", "blackboard", "circuit_breaker", "chain_of_responsibility", "adversarial", "event_driven"];
+export type PatternType = (typeof SUPPORTED_PATTERNS)[number];
 /**
  * Detect the current pattern type from environment variable.
  *
@@ -44,12 +28,7 @@ exports.SUPPORTED_PATTERNS = [
  * // When PATTERN_TYPE is not set
  * detectPattern() // returns null
  */
-function detectPattern() {
-    const pattern = process.env.PATTERN_TYPE;
-    if (!pattern)
-        return null;
-    return pattern;
-}
+export declare function detectPattern(): string | null;
 /**
  * Safe ID pattern: alphanumeric, underscore, hyphen, 1-64 characters.
  *
@@ -66,13 +45,11 @@ function detectPattern() {
  * SAFE_ID_PATTERN.test('../etc/passwd') // false
  * SAFE_ID_PATTERN.test('$(whoami)')     // false
  */
-exports.SAFE_ID_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
+export declare const SAFE_ID_PATTERN: RegExp;
 /**
  * Validate an ID against the safe pattern.
  *
  * @param id - The ID to validate
  * @returns true if the ID is safe, false otherwise
  */
-function isValidId(id) {
-    return exports.SAFE_ID_PATTERN.test(id);
-}
+export declare function isValidId(id: string): boolean;

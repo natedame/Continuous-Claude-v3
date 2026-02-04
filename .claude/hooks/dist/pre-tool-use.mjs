@@ -655,6 +655,272 @@ print(json.dumps(artifacts))
 async function handleCircuitBreaker(input) {
   return { result: "continue" };
 }
+
+// Metrics logging - fire-and-forget to statusboard
+// Use localhost on host Mac, host.docker.internal in Docker containers
+var STATUSBOARD_URL = existsSync7('/.dockerenv')
+  ? 'http://host.docker.internal:3010'
+  : 'http://localhost:3010';
+
+function logResourceEvent(eventType, data) {
+  // Fire-and-forget: don't block operations if statusboard is down
+  try {
+    const swarmName = process.env.SWARM_NAME || 'unknown';
+    const sessionId = getSessionId();
+
+    const payload = JSON.stringify({
+      event: eventType,
+      swarm_name: swarmName,
+      session_id: sessionId,
+      timestamp: new Date().toISOString(),
+      ...data
+    });
+
+    // Use spawn to avoid blocking - truly fire-and-forget
+    const { spawn } = require('child_process');
+    const curl = spawn('curl', [
+      '-s', '-o', '/dev/null',
+      '-X', 'POST',
+      '-H', 'Content-Type: application/json',
+      '-d', payload,
+      '--connect-timeout', '1',
+      '--max-time', '2',
+      `${STATUSBOARD_URL}/api/metrics/resource-events`
+    ], { detached: true, stdio: 'ignore' });
+    curl.unref(); // Don't wait for completion
+  } catch {
+    // Silently fail - metrics are nice-to-have
+  }
+}
+
+function logSpawnEvent(toolName, agentCount, maxAgents) {
+  logResourceEvent('spawn', {
+    tool_name: toolName,
+    agent_count: agentCount,
+    max_agents: maxAgents
+  });
+}
+
+function logBlockEvent(reason, toolName, threshold) {
+  logResourceEvent('block', {
+    reason: reason,
+    tool_name: toolName,
+    threshold: threshold
+  });
+}
+
+function logWarningEvent(metric, threshold, currentValue) {
+  logResourceEvent('warning', {
+    metric: metric,
+    threshold: threshold,
+    current_value: currentValue
+  });
+}
+
+// Memory pressure monitoring
+var MEMORY_THRESHOLDS = {
+  warn70: 70,
+  warn80: 80,
+  block90: 90
+};
+var MEMORY_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes between same-level warnings
+
+function getMemoryUsagePercent() {
+  try {
+    // Try cgroup v2 first (Docker containers)
+    const cgroupPath = '/sys/fs/cgroup/memory.current';
+    const cgroupLimitPath = '/sys/fs/cgroup/memory.max';
+    if (existsSync7(cgroupPath) && existsSync7(cgroupLimitPath)) {
+      const current = parseInt(readFileSync2(cgroupPath, 'utf-8').trim(), 10);
+      const limitStr = readFileSync2(cgroupLimitPath, 'utf-8').trim();
+      if (limitStr !== 'max') {
+        const limit = parseInt(limitStr, 10);
+        // Guard against NaN from parseInt
+        if (limit > 0 && !isNaN(current)) {
+          const percent = Math.round((current / limit) * 100);
+          if (!isNaN(percent)) return percent;
+        }
+      }
+    }
+
+    // Try cgroup v1 (older Docker)
+    const cgroupV1Path = '/sys/fs/cgroup/memory/memory.usage_in_bytes';
+    const cgroupV1LimitPath = '/sys/fs/cgroup/memory/memory.limit_in_bytes';
+    if (existsSync7(cgroupV1Path) && existsSync7(cgroupV1LimitPath)) {
+      const current = parseInt(readFileSync2(cgroupV1Path, 'utf-8').trim(), 10);
+      const limit = parseInt(readFileSync2(cgroupV1LimitPath, 'utf-8').trim(), 10);
+      // Ignore if limit is set to a very high value (effectively no limit)
+      // Guard against NaN from parseInt
+      if (limit > 0 && limit < 9223372036854771712 && !isNaN(current)) {
+        const percent = Math.round((current / limit) * 100);
+        if (!isNaN(percent)) return percent;
+      }
+    }
+
+    // Fall back to /proc/meminfo (host or when cgroup not available)
+    if (existsSync7('/proc/meminfo')) {
+      const meminfo = readFileSync2('/proc/meminfo', 'utf-8');
+      const totalMatch = meminfo.match(/MemTotal:\s+(\d+)\s+kB/);
+      const availableMatch = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
+      if (totalMatch && availableMatch) {
+        const total = parseInt(totalMatch[1], 10);
+        const available = parseInt(availableMatch[1], 10);
+        // Guard against NaN
+        if (!isNaN(total) && !isNaN(available) && total > 0) {
+          const used = total - available;
+          const percent = Math.round((used / total) * 100);
+          if (!isNaN(percent)) return percent;
+        }
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getMemoryCooldownPath() {
+  const sessionId = getSessionId();
+  return `/tmp/claude-memory-cooldown-${sessionId}.json`;
+}
+
+function checkMemoryCooldown(threshold) {
+  try {
+    const cooldownPath = getMemoryCooldownPath();
+    if (!existsSync7(cooldownPath)) {
+      return { shouldWarn: true, lastWarned: null };
+    }
+    const data = JSON.parse(readFileSync2(cooldownPath, 'utf-8'));
+    const lastWarnedAt = data[`threshold_${threshold}`] || 0;
+    const now = Date.now();
+    if (now - lastWarnedAt > MEMORY_COOLDOWN_MS) {
+      return { shouldWarn: true, lastWarned: lastWarnedAt };
+    }
+    return { shouldWarn: false, lastWarned: lastWarnedAt };
+  } catch {
+    return { shouldWarn: true, lastWarned: null };
+  }
+}
+
+function updateMemoryCooldown(threshold) {
+  try {
+    const cooldownPath = getMemoryCooldownPath();
+    let data = {};
+    if (existsSync7(cooldownPath)) {
+      try {
+        data = JSON.parse(readFileSync2(cooldownPath, 'utf-8'));
+      } catch { data = {}; }
+    }
+    data[`threshold_${threshold}`] = Date.now();
+    require('fs').writeFileSync(cooldownPath, JSON.stringify(data));
+  } catch {
+    // Silently fail - cooldown is nice-to-have
+  }
+}
+
+function resetMemoryCooldownIfRecovered(currentPercent) {
+  // If memory dropped below 65%, reset the 70% warning cooldown
+  // so it can fire again if memory rises back up
+  try {
+    const cooldownPath = getMemoryCooldownPath();
+    if (!existsSync7(cooldownPath)) return;
+
+    const data = JSON.parse(readFileSync2(cooldownPath, 'utf-8'));
+    let changed = false;
+
+    if (currentPercent < 65 && data.threshold_70) {
+      delete data.threshold_70;
+      changed = true;
+    }
+    if (currentPercent < 75 && data.threshold_80) {
+      delete data.threshold_80;
+      changed = true;
+    }
+    if (currentPercent < 85 && data.threshold_90) {
+      delete data.threshold_90;
+      changed = true;
+    }
+
+    if (changed) {
+      require('fs').writeFileSync(cooldownPath, JSON.stringify(data));
+    }
+  } catch {
+    // Silently fail
+  }
+}
+
+function checkMemoryPressure(toolName) {
+  const memPercent = getMemoryUsagePercent();
+  if (memPercent === null) {
+    return null; // Can't determine memory, allow operation
+  }
+
+  // Reset cooldowns if memory recovered
+  resetMemoryCooldownIfRecovered(memPercent);
+
+  // Use same SPAWN_TOOLS list as main function (consistent)
+  const BASE_SPAWN_TOOLS = ["Task", "mcp__cao-mcp-server__assign", "mcp__cao-mcp-server__handoff"];
+  const extraTools = (process.env.SWARM_SPAWN_TOOLS || '').split(',').filter(t => t.trim());
+  const SPAWN_TOOLS = [...BASE_SPAWN_TOOLS, ...extraTools];
+  const isSpawnTool = SPAWN_TOOLS.includes(toolName);
+
+  // 90% - Block spawn tools only
+  if (memPercent >= MEMORY_THRESHOLDS.block90) {
+    if (isSpawnTool) {
+      return {
+        action: "block",
+        threshold: 90,
+        currentValue: memPercent,
+        message: `Memory critical (${memPercent}%). Cannot spawn new agents. Complete current work or wait for memory to free up.`
+      };
+    }
+    // Non-spawn tools get a warning at 90%
+    const cooldown = checkMemoryCooldown(90);
+    if (cooldown.shouldWarn) {
+      updateMemoryCooldown(90);
+      return {
+        action: "warn",
+        threshold: 90,
+        currentValue: memPercent,
+        message: `⚠️ Memory critical (${memPercent}%). Agent spawning disabled. Finish current tasks to free memory.`
+      };
+    }
+    return null;
+  }
+
+  // 80% - Warn only (once per cooldown)
+  if (memPercent >= MEMORY_THRESHOLDS.warn80) {
+    const cooldown = checkMemoryCooldown(80);
+    if (cooldown.shouldWarn) {
+      updateMemoryCooldown(80);
+      return {
+        action: "warn",
+        threshold: 80,
+        currentValue: memPercent,
+        message: `⚠️ Memory high (${memPercent}%). Consider completing current tasks before spawning more agents.`
+      };
+    }
+    return null;
+  }
+
+  // 70% - Warn only (once per cooldown)
+  if (memPercent >= MEMORY_THRESHOLDS.warn70) {
+    const cooldown = checkMemoryCooldown(70);
+    if (cooldown.shouldWarn) {
+      updateMemoryCooldown(70);
+      return {
+        action: "warn",
+        threshold: 70,
+        currentValue: memPercent,
+        message: `ℹ️ Memory at ${memPercent}%. Monitoring resource usage.`
+      };
+    }
+    return null;
+  }
+
+  return null;
+}
 async function main() {
   let input;
   try {
@@ -664,16 +930,51 @@ async function main() {
     console.log(JSON.stringify({ result: "continue" }));
     return;
   }
-  if (input.tool_name === "Task") {
+  // Agent spawn limit enforcement - applies to all tools that create new agents
+  // handoff also creates agents (creates terminal before blocking wait)
+  // SWARM_SPAWN_TOOLS env var can add additional tools (comma-separated)
+  const BASE_SPAWN_TOOLS = ["Task", "mcp__cao-mcp-server__assign", "mcp__cao-mcp-server__handoff"];
+  const extraTools = (process.env.SWARM_SPAWN_TOOLS || '').split(',').filter(t => t.trim());
+  const SPAWN_TOOLS = [...BASE_SPAWN_TOOLS, ...extraTools];
+  if (SPAWN_TOOLS.includes(input.tool_name)) {
     const resourceState = readResourceState();
     if (resourceState && resourceState.activeAgents >= resourceState.maxAgents) {
+      // Log the block event
+      logBlockEvent('agent_limit', input.tool_name, `${resourceState.activeAgents}/${resourceState.maxAgents}`);
       console.log(JSON.stringify({
         result: "block",
-        reason: `Agent limit reached: ${resourceState.activeAgents}/${resourceState.maxAgents} agents running. Wait for existing agents to complete or terminate idle ones.`
+        reason: `Agent limit reached: ${resourceState.activeAgents}/${resourceState.maxAgents} agents running. Wait for existing agents to complete or use send_message to check status.`
+      }));
+      return;
+    }
+    // Log successful spawn (will be counted when agent actually starts)
+    logSpawnEvent(input.tool_name, resourceState?.activeAgents || 0, resourceState?.maxAgents || 10);
+  }
+
+  // Memory pressure layer - warn at 70%/80%, block spawns at 90%
+  const memoryCheck = checkMemoryPressure(input.tool_name);
+  if (memoryCheck) {
+    if (memoryCheck.action === "block") {
+      // Log the block event
+      logBlockEvent('memory', input.tool_name, memoryCheck.threshold || '90%');
+      console.log(JSON.stringify({
+        result: "block",
+        reason: memoryCheck.message
+      }));
+      return;
+    }
+    if (memoryCheck.action === "warn") {
+      // Log the warning event
+      logWarningEvent('memory', memoryCheck.threshold, memoryCheck.currentValue);
+      // For warnings, continue but include the message
+      console.log(JSON.stringify({
+        result: "continue",
+        message: memoryCheck.message
       }));
       return;
     }
   }
+
   const patternType = detectPattern();
   if (!patternType) {
     console.log(JSON.stringify({ result: "continue" }));

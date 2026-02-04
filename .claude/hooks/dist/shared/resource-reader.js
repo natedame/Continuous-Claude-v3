@@ -1,7 +1,8 @@
+"use strict";
 /**
  * Resource State Reader Utility
  *
- * Reads resource state JSON from /tmp/claude-resources-{sessionId}.json.
+ * Reads resource state JSON from {tmpdir}/claude-resources-{sessionId}.json.
  * This file is written by status.sh (Phase 3) and contains:
  * - freeMemMB: Available RAM in MB
  * - activeAgents: Number of currently running agents
@@ -11,7 +12,14 @@
  * Part of Phase 4: TypeScript Resource Reader
  * See: docs/handoffs/resource-limits-plan.md
  */
-import { readFileSync, existsSync } from 'fs';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.DEFAULT_RESOURCE_STATE = void 0;
+exports.getSessionId = getSessionId;
+exports.getResourceFilePath = getResourceFilePath;
+exports.readResourceState = readResourceState;
+var fs_1 = require("fs");
+var os_1 = require("os");
+var path_1 = require("path");
 // =============================================================================
 // Constants
 // =============================================================================
@@ -24,7 +32,7 @@ import { readFileSync, existsSync } from 'fs';
  * - maxAgents: 10 (reasonable default limit)
  * - contextPct: 0 (assume fresh context)
  */
-export const DEFAULT_RESOURCE_STATE = {
+exports.DEFAULT_RESOURCE_STATE = {
     freeMemMB: 4096,
     activeAgents: 0,
     maxAgents: 10,
@@ -42,22 +50,22 @@ export const DEFAULT_RESOURCE_STATE = {
  *
  * @returns Session ID string
  */
-export function getSessionId() {
+function getSessionId() {
     return process.env.CLAUDE_SESSION_ID || String(process.ppid || process.pid);
 }
 /**
  * Get the path to the resource state JSON file.
  *
  * @param sessionId - Session ID to use in the filename
- * @returns Path to /tmp/claude-resources-{sessionId}.json
+ * @returns Path to {tmpdir}/claude-resources-{sessionId}.json
  */
-export function getResourceFilePath(sessionId) {
-    return `/tmp/claude-resources-${sessionId}.json`;
+function getResourceFilePath(sessionId) {
+    return (0, path_1.join)((0, os_1.tmpdir)(), "claude-resources-".concat(sessionId, ".json"));
 }
 /**
  * Read resource state from the JSON file.
  *
- * Reads /tmp/claude-resources-{sessionId}.json and parses it into a
+ * Reads {tmpdir}/claude-resources-{sessionId}.json and parses it into a
  * ResourceState object. Returns null if:
  * - File doesn't exist
  * - File contains invalid JSON
@@ -76,25 +84,25 @@ export function getResourceFilePath(sessionId) {
  * }
  * ```
  */
-export function readResourceState() {
-    const sessionId = getSessionId();
-    const resourceFile = getResourceFilePath(sessionId);
+function readResourceState() {
+    var sessionId = getSessionId();
+    var resourceFile = getResourceFilePath(sessionId);
     // Return null if file doesn't exist
-    if (!existsSync(resourceFile)) {
+    if (!(0, fs_1.existsSync)(resourceFile)) {
         return null;
     }
     try {
-        const content = readFileSync(resourceFile, 'utf-8');
-        const data = JSON.parse(content);
+        var content = (0, fs_1.readFileSync)(resourceFile, 'utf-8');
+        var data = JSON.parse(content);
         // Merge with defaults to handle missing fields
         return {
-            freeMemMB: typeof data.freeMemMB === 'number' ? data.freeMemMB : DEFAULT_RESOURCE_STATE.freeMemMB,
-            activeAgents: typeof data.activeAgents === 'number' ? data.activeAgents : DEFAULT_RESOURCE_STATE.activeAgents,
-            maxAgents: typeof data.maxAgents === 'number' ? data.maxAgents : DEFAULT_RESOURCE_STATE.maxAgents,
-            contextPct: typeof data.contextPct === 'number' ? data.contextPct : DEFAULT_RESOURCE_STATE.contextPct,
+            freeMemMB: typeof data.freeMemMB === 'number' ? data.freeMemMB : exports.DEFAULT_RESOURCE_STATE.freeMemMB,
+            activeAgents: typeof data.activeAgents === 'number' ? data.activeAgents : exports.DEFAULT_RESOURCE_STATE.activeAgents,
+            maxAgents: typeof data.maxAgents === 'number' ? data.maxAgents : exports.DEFAULT_RESOURCE_STATE.maxAgents,
+            contextPct: typeof data.contextPct === 'number' ? data.contextPct : exports.DEFAULT_RESOURCE_STATE.contextPct,
         };
     }
-    catch {
+    catch (_a) {
         // Return null on JSON parse error or file read error
         return null;
     }

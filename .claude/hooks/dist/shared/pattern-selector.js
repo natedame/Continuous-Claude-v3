@@ -1,15 +1,20 @@
+"use strict";
 /**
  * Pattern Selector
  *
  * Selects appropriate patterns for tasks and validates pattern compositions.
  * Uses Python bridge to call validate_composition.py and pattern_inference.py.
  */
-import { callPatternInference, callValidateComposition } from './python-bridge.js';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SUPPORTED_PATTERNS = void 0;
+exports.selectPattern = selectPattern;
+exports.validateComposition = validateComposition;
+var python_bridge_js_1 = require("./python-bridge.js");
 /**
  * All supported orchestration patterns.
  * Matches Python PATTERNS dict in validate_composition.py
  */
-export const SUPPORTED_PATTERNS = [
+exports.SUPPORTED_PATTERNS = [
     'swarm',
     'jury',
     'pipeline',
@@ -29,8 +34,8 @@ export const SUPPORTED_PATTERNS = [
  * Select the best pattern for a given task.
  * Uses Python pattern_inference.py via subprocess.
  */
-export function selectPattern(task) {
-    const result = callPatternInference(task.description);
+function selectPattern(task) {
+    var result = (0, python_bridge_js_1.callPatternInference)(task.description);
     return {
         pattern: result.pattern,
         confidence: result.confidence,
@@ -48,7 +53,9 @@ export function selectPattern(task) {
  * @param operator - Composition operator (default: ';' sequential)
  * @returns ValidationResult with validity, errors, warnings, and trace
  */
-export function validateComposition(patterns, scope = 'handoff', operator = ';') {
+function validateComposition(patterns, scope, operator) {
+    if (scope === void 0) { scope = 'handoff'; }
+    if (operator === void 0) { operator = ';'; }
     if (patterns.length === 0) {
         return {
             valid: true,
@@ -68,11 +75,11 @@ export function validateComposition(patterns, scope = 'handoff', operator = ';')
         };
     }
     // Validate pairwise (left-associative)
-    const allWarnings = [];
-    const allTraces = [];
-    let compositionStr = patterns[0];
-    for (let i = 0; i < patterns.length - 1; i++) {
-        const result = callValidateComposition(patterns[i], patterns[i + 1], scope, operator);
+    var allWarnings = [];
+    var allTraces = [];
+    var compositionStr = patterns[0];
+    for (var i = 0; i < patterns.length - 1; i++) {
+        var result = (0, python_bridge_js_1.callValidateComposition)(patterns[i], patterns[i + 1], scope, operator);
         if (!result.valid) {
             return {
                 valid: false,
@@ -82,8 +89,8 @@ export function validateComposition(patterns, scope = 'handoff', operator = ';')
                 scopeTrace: result.scopeTrace,
             };
         }
-        allWarnings.push(...result.warnings);
-        allTraces.push(...result.scopeTrace);
+        allWarnings.push.apply(allWarnings, result.warnings);
+        allTraces.push.apply(allTraces, result.scopeTrace);
         compositionStr = result.composition;
     }
     return {

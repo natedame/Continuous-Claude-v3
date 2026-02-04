@@ -4,11 +4,37 @@ import { join as join2, dirname } from "path";
 
 // src/daemon-client.ts
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
-import { execSync, spawnSync } from "child_process";
+import { execSync, spawnSync, execFileSync } from "child_process";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
 import * as net from "net";
 import * as crypto from "crypto";
+var tldrAvailableCache = null;
+function isTldrAvailable() {
+  if (tldrAvailableCache !== null) {
+    return tldrAvailableCache;
+  }
+  try {
+    execFileSync("which", ["tldr"], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 1e3
+    });
+    tldrAvailableCache = true;
+  } catch {
+    try {
+      execFileSync("which", ["nc"], {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 1e3
+      });
+      tldrAvailableCache = false;
+    } catch {
+      tldrAvailableCache = false;
+    }
+  }
+  return tldrAvailableCache;
+}
 function resolveProjectDir(projectDir) {
   return resolve(projectDir);
 }
@@ -141,6 +167,9 @@ function isDaemonReachable(projectDir) {
   }
 }
 function tryStartDaemon(projectDir) {
+  if (!isTldrAvailable()) {
+    return false;
+  }
   try {
     if (isDaemonProcessRunning(projectDir)) {
       return true;
@@ -198,6 +227,9 @@ function tryStartDaemon(projectDir) {
   }
 }
 function queryDaemonSync(query, projectDir) {
+  if (!isTldrAvailable()) {
+    return { status: "unavailable", error: "TLDR not installed" };
+  }
   if (isIndexing(projectDir)) {
     return {
       indexing: true,

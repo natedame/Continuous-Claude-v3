@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Erotetic Question Framework - Phase 8 of Self-Improving Skill System
  *
@@ -11,6 +12,11 @@
  *
  * Plan reference: thoughts/shared/plans/self-improving-skill-system.md (Phase 8)
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_QUESTIONS = void 0;
+exports.getQHeuristicsForTask = getQHeuristicsForTask;
+exports.resolveFromContext = resolveFromContext;
+exports.formatAskUserQuestions = formatAskUserQuestions;
 // =============================================================================
 // Constants
 // =============================================================================
@@ -18,7 +24,7 @@
  * Maximum number of questions per AskUserQuestion tool call.
  * This is a hard limit from the Claude tool specification.
  */
-export const MAX_QUESTIONS = 4;
+exports.MAX_QUESTIONS = 4;
 // =============================================================================
 // Q-Heuristic Definitions
 // =============================================================================
@@ -26,7 +32,7 @@ export const MAX_QUESTIONS = 4;
  * Q-heuristics for implementation tasks.
  * These help clarify what to build and how.
  */
-const IMPLEMENTATION_QHEURISTICS = [
+var IMPLEMENTATION_QHEURISTICS = [
     {
         id: 'auth_method',
         question: 'What authentication method should be used?',
@@ -68,7 +74,7 @@ const IMPLEMENTATION_QHEURISTICS = [
  * Q-heuristics for debug tasks.
  * These help scope the investigation.
  */
-const DEBUG_QHEURISTICS = [
+var DEBUG_QHEURISTICS = [
     {
         id: 'error_type',
         question: 'What type of error are you seeing?',
@@ -110,7 +116,7 @@ const DEBUG_QHEURISTICS = [
  * Q-heuristics for research tasks.
  * These help define the research scope and output.
  */
-const RESEARCH_QHEURISTICS = [
+var RESEARCH_QHEURISTICS = [
     {
         id: 'depth',
         question: 'How deep should the research go?',
@@ -151,7 +157,7 @@ const RESEARCH_QHEURISTICS = [
  * Q-heuristics for planning tasks.
  * These help define the plan structure.
  */
-const PLANNING_QHEURISTICS = [
+var PLANNING_QHEURISTICS = [
     {
         id: 'detail_level',
         question: 'How detailed should the plan be?',
@@ -189,7 +195,7 @@ const PLANNING_QHEURISTICS = [
 /**
  * All Q-heuristics organized by task type.
  */
-const TASK_QHEURISTICS = {
+var TASK_QHEURISTICS = {
     implementation: IMPLEMENTATION_QHEURISTICS,
     debug: DEBUG_QHEURISTICS,
     research: RESEARCH_QHEURISTICS,
@@ -204,8 +210,8 @@ const TASK_QHEURISTICS = {
  * @param taskType - The type of task ('implementation', 'debug', 'research', 'planning')
  * @returns Array of Q-heuristics for this task type, or empty array for unknown types
  */
-export function getQHeuristicsForTask(taskType) {
-    const normalizedType = taskType.toLowerCase().trim();
+function getQHeuristicsForTask(taskType) {
+    var normalizedType = taskType.toLowerCase().trim();
     if (normalizedType in TASK_QHEURISTICS) {
         return TASK_QHEURISTICS[normalizedType];
     }
@@ -220,28 +226,29 @@ export function getQHeuristicsForTask(taskType) {
  * @param qHeuristics - Q-heuristics to try to resolve
  * @returns Object with resolved answers and unresolved questions
  */
-export function resolveFromContext(prompt, qHeuristics) {
-    const resolved = {};
-    const unresolved = [];
-    const promptLower = prompt.toLowerCase();
-    for (const q of qHeuristics) {
-        let isResolved = false;
+function resolveFromContext(prompt, qHeuristics) {
+    var resolved = {};
+    var unresolved = [];
+    var promptLower = prompt.toLowerCase();
+    for (var _i = 0, qHeuristics_1 = qHeuristics; _i < qHeuristics_1.length; _i++) {
+        var q = qHeuristics_1[_i];
+        var isResolved = false;
         // Try to infer from the prompt using the inferFrom pattern
         if (q.inferFrom) {
             try {
-                const pattern = new RegExp(q.inferFrom, 'i');
-                const match = pattern.exec(promptLower);
+                var pattern = new RegExp(q.inferFrom, 'i');
+                var match = pattern.exec(promptLower);
                 if (match) {
                     // Found a match - determine which option it corresponds to
-                    const matchedText = match[0].toLowerCase();
-                    const resolvedValue = inferOptionFromMatch(q.id, matchedText);
+                    var matchedText = match[0].toLowerCase();
+                    var resolvedValue = inferOptionFromMatch(q.id, matchedText);
                     if (resolvedValue) {
                         resolved[q.id] = resolvedValue;
                         isResolved = true;
                     }
                 }
             }
-            catch {
+            catch (_a) {
                 // Invalid regex - skip inference
             }
         }
@@ -249,13 +256,13 @@ export function resolveFromContext(prompt, qHeuristics) {
             unresolved.push(q);
         }
     }
-    return { resolved, unresolved };
+    return { resolved: resolved, unresolved: unresolved };
 }
 /**
  * Inference rules per Q-heuristic ID.
  * Data-driven approach reduces cognitive complexity.
  */
-const INFERENCE_RULES = {
+var INFERENCE_RULES = {
     auth_method: [
         { keywords: ['jwt', 'bearer'], value: 'JWT' },
         { keywords: ['oauth'], value: 'OAuth2' },
@@ -316,13 +323,13 @@ const INFERENCE_RULES = {
  * Check if text matches any keyword in the list.
  */
 function matchesKeyword(text, keywords) {
-    return keywords.some(keyword => text.includes(keyword));
+    return keywords.some(function (keyword) { return text.includes(keyword); });
 }
 /**
  * Check if text matches any pattern in the list.
  */
 function matchesPattern(text, patterns) {
-    return patterns.some(pattern => pattern.test(text));
+    return patterns.some(function (pattern) { return pattern.test(text); });
 }
 /**
  * Check if a rule matches the given text.
@@ -345,8 +352,9 @@ function ruleMatches(text, rule) {
  * @returns The option label that best matches, or null if unclear
  */
 function inferOptionFromMatch(qId, matchedText) {
-    const text = matchedText.toLowerCase();
-    const rules = INFERENCE_RULES[qId];
+    var _a;
+    var text = matchedText.toLowerCase();
+    var rules = INFERENCE_RULES[qId];
     if (!rules) {
         return null;
     }
@@ -354,8 +362,8 @@ function inferOptionFromMatch(qId, matchedText) {
     if (qId === 'auth_method' && text.includes('api') && text.includes('key')) {
         return 'API Key';
     }
-    const matchingRule = rules.find(rule => ruleMatches(text, rule));
-    return matchingRule?.value ?? null;
+    var matchingRule = rules.find(function (rule) { return ruleMatches(text, rule); });
+    return (_a = matchingRule === null || matchingRule === void 0 ? void 0 : matchingRule.value) !== null && _a !== void 0 ? _a : null;
 }
 /**
  * Format unresolved Q-heuristics for Claude's AskUserQuestion tool.
@@ -364,22 +372,22 @@ function inferOptionFromMatch(qId, matchedText) {
  * @param unresolved - Array of Q-heuristics that need user input
  * @returns AskUserQuestion-compatible format
  */
-export function formatAskUserQuestions(unresolved) {
+function formatAskUserQuestions(unresolved) {
     // Limit to MAX_QUESTIONS (4)
-    const questionsToAsk = unresolved.slice(0, MAX_QUESTIONS);
-    const questions = questionsToAsk.map(q => ({
+    var questionsToAsk = unresolved.slice(0, exports.MAX_QUESTIONS);
+    var questions = questionsToAsk.map(function (q) { return ({
         id: q.id,
         question: q.question,
-        options: q.options.map(o => ({ label: o.label, description: o.description })),
+        options: q.options.map(function (o) { return ({ label: o.label, description: o.description }); }),
         optional: q.default !== undefined,
         defaultValue: q.default,
-    }));
-    const remainingCount = unresolved.length - MAX_QUESTIONS;
-    const context = remainingCount > 0
-        ? `I have ${questionsToAsk.length} questions to clarify your request. (${remainingCount} more will follow)`
-        : `I have ${questionsToAsk.length} questions to clarify your request.`;
+    }); });
+    var remainingCount = unresolved.length - exports.MAX_QUESTIONS;
+    var context = remainingCount > 0
+        ? "I have ".concat(questionsToAsk.length, " questions to clarify your request. (").concat(remainingCount, " more will follow)")
+        : "I have ".concat(questionsToAsk.length, " questions to clarify your request.");
     return {
-        questions,
-        context,
+        questions: questions,
+        context: context,
     };
 }

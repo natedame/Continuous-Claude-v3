@@ -8,14 +8,57 @@
  * - Consistent timeout handling
  * - Auto-start capability
  * - Graceful degradation when indexing
+ *
+ * IMPORTANT: In swarm containers where TLDR isn't installed,
+ * all operations fast-fail to avoid 10+ second delays.
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { execSync, spawnSync } from 'child_process';
+import { execSync, spawnSync, execFileSync } from 'child_process';
 import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 import * as net from 'net';
 import * as crypto from 'crypto';
+
+// Cache for TLDR availability check (valid for session)
+let tldrAvailableCache: boolean | null = null;
+
+/**
+ * Check if TLDR CLI is available on the system.
+ * Cached for the session to avoid repeated lookups.
+ */
+function isTldrAvailable(): boolean {
+  if (tldrAvailableCache !== null) {
+    return tldrAvailableCache;
+  }
+
+  try {
+    // Try to find tldr in PATH
+    execFileSync('which', ['tldr'], {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 1000
+    });
+    tldrAvailableCache = true;
+  } catch {
+    // Also check if nc (netcat) is available - required for sync queries
+    try {
+      execFileSync('which', ['nc'], {
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 1000
+      });
+      // nc exists but tldr doesn't - can't use daemon but nc queries might work
+      // Still mark as unavailable since we need tldr to start daemon
+      tldrAvailableCache = false;
+    } catch {
+      // Neither tldr nor nc available - definitely can't use daemon
+      tldrAvailableCache = false;
+    }
+  }
+
+  return tldrAvailableCache;
+}
 
 /**
  * Resolve project directory to absolute path.
@@ -347,10 +390,18 @@ function isDaemonReachable(projectDir: string): boolean {
  * Try to start the daemon for a project.
  * Uses a lock file to prevent race conditions when multiple hooks fire in parallel.
  *
+ * IMPORTANT: Fast-fails if TLDR is not installed to avoid 10+ second delays.
+ *
  * @param projectDir - Project directory path
  * @returns true if start was attempted successfully
  */
 export function tryStartDaemon(projectDir: string): boolean {
+  // FAST-FAIL: If TLDR isn't installed, don't even try
+  // This prevents 10+ second busy-wait loops in swarm containers
+  if (!isTldrAvailable()) {
+    return false;
+  }
+
   try {
     // FAST CHECK: Is daemon process running? (checks PID file + kill -0)
     // This is faster and more reliable than socket ping
@@ -532,11 +583,19 @@ export function queryDaemon(query: DaemonQuery, projectDir: string): Promise<Dae
  * Query the daemon synchronously using nc (netcat) or PowerShell (Windows).
  * Fallback for contexts where async is not available.
  *
+ * IMPORTANT: Fast-fails if TLDR/nc is not installed to avoid long delays.
+ *
  * @param query - Query to send to daemon
  * @param projectDir - Project directory path
  * @returns Daemon response
  */
 export function queryDaemonSync(query: DaemonQuery, projectDir: string): DaemonResponse {
+  // FAST-FAIL: If TLDR isn't installed, return immediately
+  // This prevents 10+ second busy-wait loops in swarm containers
+  if (!isTldrAvailable()) {
+    return { status: 'unavailable', error: 'TLDR not installed' };
+  }
+
   // Check if indexing - return early with indexing flag
   if (isIndexing(projectDir)) {
     return {

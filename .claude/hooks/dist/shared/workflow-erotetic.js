@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Workflow Erotetic Gate - Proposition Extraction and Gate Evaluation
  *
@@ -8,14 +9,31 @@
  * 4. evaluateEroteticGate() - Return continue/block decision
  * 5. generateBlockFeedback() - Don Norman error messages
  */
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Q_VALUE_ORDER = exports.PROPOSITION_PATTERNS = exports.CRITICAL_PROPOSITIONS = void 0;
+exports.extractPropositions = extractPropositions;
+exports.generateClarificationQuestions = generateClarificationQuestions;
+exports.formatGateStatus = formatGateStatus;
+exports.evaluateEroteticGate = evaluateEroteticGate;
+exports.generateBlockFeedback = generateBlockFeedback;
+exports.isImplementationTask = isImplementationTask;
 // ============================================================
 // Constants
 // ============================================================
 // Pattern to detect implementation tasks
-const IMPL_PATTERNS = /\b(build|implement|create|add|develop|design|set up|write)\b/i;
-const NON_IMPL_PATTERNS = /\b(fix|run|show|explain|list|search|rename|delete|update)\b/i;
+var IMPL_PATTERNS = /\b(build|implement|create|add|develop|design|set up|write)\b/i;
+var NON_IMPL_PATTERNS = /\b(fix|run|show|explain|list|search|rename|delete|update)\b/i;
 // Domain-specific proposition extractors
-const PROPOSITION_PATTERNS = {
+var PROPOSITION_PATTERNS = {
     framework: /\b(fastapi|express|hono|gin|django|flask|rails|spring|nest\.?js)\b/i,
     auth_method: /\b(jwt|oauth\d?|session|api[- ]?key|basic auth|bearer|saml|oidc)\b/i,
     database: /\b(postgres|postgresql|mysql|sqlite|mongodb|redis|dynamodb|firestore)\b/i,
@@ -23,10 +41,12 @@ const PROPOSITION_PATTERNS = {
     language: /\b(python|typescript|javascript|go|rust|java|ruby|php)\b/i,
     testing: /\b(pytest|jest|vitest|mocha|junit|rspec)\b/i,
 };
+exports.PROPOSITION_PATTERNS = PROPOSITION_PATTERNS;
 // Critical propositions - gate blocks if these are missing
-const CRITICAL_PROPOSITIONS = ['framework', 'auth_method', 'database'];
+var CRITICAL_PROPOSITIONS = ['framework', 'auth_method', 'database'];
+exports.CRITICAL_PROPOSITIONS = CRITICAL_PROPOSITIONS;
 // Q-value ordering (higher = more architectural impact, asked first)
-const Q_VALUE_ORDER = {
+var Q_VALUE_ORDER = {
     framework: 100,
     database: 90,
     auth_method: 80,
@@ -34,8 +54,9 @@ const Q_VALUE_ORDER = {
     language: 50,
     testing: 30,
 };
+exports.Q_VALUE_ORDER = Q_VALUE_ORDER;
 // Default options for common propositions
-const PROPOSITION_OPTIONS = {
+var PROPOSITION_OPTIONS = {
     framework: ['FastAPI', 'Express', 'Django', 'Flask', 'NestJS', 'Rails', 'Spring', 'Hono'],
     auth_method: ['JWT', 'OAuth', 'Session', 'API Key', 'SAML', 'OIDC'],
     database: ['PostgreSQL', 'MySQL', 'SQLite', 'MongoDB', 'Redis', 'DynamoDB'],
@@ -44,7 +65,7 @@ const PROPOSITION_OPTIONS = {
     testing: ['pytest', 'Jest', 'Vitest', 'Mocha', 'JUnit', 'RSpec'],
 };
 // Why explanations for propositions
-const PROPOSITION_WHY = {
+var PROPOSITION_WHY = {
     framework: 'The framework choice impacts architecture, dependencies, and development patterns.',
     auth_method: 'Authentication choice affects security architecture and integration complexity.',
     database: 'Database selection impacts data modeling, scalability, and query patterns.',
@@ -56,14 +77,15 @@ const PROPOSITION_WHY = {
 // Utility Functions
 // ============================================================
 function findFirstMatch(prompt, pattern) {
-    const match = prompt.match(pattern);
-    return match?.index ?? -1;
+    var _a;
+    var match = prompt.match(pattern);
+    return (_a = match === null || match === void 0 ? void 0 : match.index) !== null && _a !== void 0 ? _a : -1;
 }
 function isImplementationTask(prompt) {
-    if (!prompt?.trim())
+    if (!(prompt === null || prompt === void 0 ? void 0 : prompt.trim()))
         return false;
-    const implPos = findFirstMatch(prompt, IMPL_PATTERNS);
-    const nonImplPos = findFirstMatch(prompt, NON_IMPL_PATTERNS);
+    var implPos = findFirstMatch(prompt, IMPL_PATTERNS);
+    var nonImplPos = findFirstMatch(prompt, NON_IMPL_PATTERNS);
     if (implPos === -1)
         return false;
     if (nonImplPos === -1)
@@ -73,7 +95,7 @@ function isImplementationTask(prompt) {
 function toTitleCase(str) {
     return str
         .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .map(function (word) { return word.charAt(0).toUpperCase() + word.slice(1); })
         .join(' ');
 }
 // ============================================================
@@ -83,20 +105,22 @@ function toTitleCase(str) {
  * Extract propositions from a prompt using pattern matching.
  * Returns a dict where found values are lowercase strings, missing values are "UNKNOWN".
  */
-export function extractPropositions(prompt) {
-    const propositions = {};
+function extractPropositions(prompt) {
+    var propositions = {};
     // Handle empty or whitespace-only input
-    if (!prompt?.trim()) {
-        for (const propName of Object.keys(PROPOSITION_PATTERNS)) {
+    if (!(prompt === null || prompt === void 0 ? void 0 : prompt.trim())) {
+        for (var _i = 0, _a = Object.keys(PROPOSITION_PATTERNS); _i < _a.length; _i++) {
+            var propName = _a[_i];
             propositions[propName] = 'UNKNOWN';
         }
         return propositions;
     }
-    for (const [propName, pattern] of Object.entries(PROPOSITION_PATTERNS)) {
-        const match = prompt.match(pattern);
+    for (var _b = 0, _c = Object.entries(PROPOSITION_PATTERNS); _b < _c.length; _b++) {
+        var _d = _c[_b], propName = _d[0], pattern = _d[1];
+        var match = prompt.match(pattern);
         if (match) {
             // Normalize to lowercase and handle special cases
-            let value = match[0].toLowerCase();
+            var value = match[0].toLowerCase();
             // Normalize nest.js to nestjs
             if (value === 'nest.js')
                 value = 'nestjs';
@@ -118,44 +142,47 @@ export function extractPropositions(prompt) {
  * Generate clarification questions for a list of unknown propositions.
  * Questions are ordered by Q-value (architectural impact).
  */
-export function generateClarificationQuestions(unknowns) {
+function generateClarificationQuestions(unknowns) {
     if (unknowns.length === 0) {
         return [];
     }
     // Sort by Q-value (higher = more important = asked first)
-    const sortedUnknowns = [...unknowns].sort((a, b) => {
-        const qA = Q_VALUE_ORDER[a] ?? 10;
-        const qB = Q_VALUE_ORDER[b] ?? 10;
+    var sortedUnknowns = __spreadArray([], unknowns, true).sort(function (a, b) {
+        var _a, _b;
+        var qA = (_a = Q_VALUE_ORDER[a]) !== null && _a !== void 0 ? _a : 10;
+        var qB = (_b = Q_VALUE_ORDER[b]) !== null && _b !== void 0 ? _b : 10;
         return qB - qA;
     });
-    return sortedUnknowns.map(proposition => ({
-        header: toTitleCase(proposition),
-        proposition,
-        options: PROPOSITION_OPTIONS[proposition] ?? ['Other (specify)'],
-        why: PROPOSITION_WHY[proposition] ??
-            `The ${proposition} choice impacts the overall architecture and implementation.`,
-    }));
+    return sortedUnknowns.map(function (proposition) {
+        var _a, _b;
+        return ({
+            header: toTitleCase(proposition),
+            proposition: proposition,
+            options: (_a = PROPOSITION_OPTIONS[proposition]) !== null && _a !== void 0 ? _a : ['Other (specify)'],
+            why: (_b = PROPOSITION_WHY[proposition]) !== null && _b !== void 0 ? _b : "The ".concat(proposition, " choice impacts the overall architecture and implementation."),
+        });
+    });
 }
 /**
  * Format gate status for display (StatusLine format).
  * Returns: "E:X R:O C:->" format where X=check, O=circle, ->=arrow, x=blocked
  */
-export function formatGateStatus(gates) {
-    const statusChars = {
+function formatGateStatus(gates) {
+    var statusChars = {
         pass: '\u2713', // checkmark
         block: '\u2717', // X mark
         pending: '\u25CB', // circle
     };
-    const eChar = statusChars[gates.erotetic];
-    const rChar = statusChars[gates.resources];
-    const cChar = statusChars[gates.composition];
-    return `E:${eChar} R:${rChar} C:${cChar}`;
+    var eChar = statusChars[gates.erotetic];
+    var rChar = statusChars[gates.resources];
+    var cChar = statusChars[gates.composition];
+    return "E:".concat(eChar, " R:").concat(rChar, " C:").concat(cChar);
 }
 /**
  * Evaluate the erotetic gate for a prompt.
  * Returns continue/block decision with list of unknowns.
  */
-export function evaluateEroteticGate(prompt) {
+function evaluateEroteticGate(prompt) {
     // Non-implementation tasks always pass
     if (!isImplementationTask(prompt)) {
         return {
@@ -164,9 +191,9 @@ export function evaluateEroteticGate(prompt) {
         };
     }
     // Extract propositions
-    const propositions = extractPropositions(prompt);
+    var propositions = extractPropositions(prompt);
     // Find unknown critical propositions
-    const unknowns = CRITICAL_PROPOSITIONS.filter(prop => propositions[prop] === 'UNKNOWN');
+    var unknowns = CRITICAL_PROPOSITIONS.filter(function (prop) { return propositions[prop] === 'UNKNOWN'; });
     if (unknowns.length === 0) {
         return {
             decision: 'continue',
@@ -174,30 +201,26 @@ export function evaluateEroteticGate(prompt) {
         };
     }
     // Gate blocks - generate feedback
-    const feedback = generateBlockFeedback('Erotetic', unknowns);
+    var feedback = generateBlockFeedback('Erotetic', unknowns);
     return {
         decision: 'block',
-        unknowns,
-        feedback,
+        unknowns: unknowns,
+        feedback: feedback,
     };
 }
 /**
  * Generate structured feedback for a blocked gate (Don Norman principles).
  */
-export function generateBlockFeedback(gate, unknowns, suggestions) {
-    const unknownsList = unknowns.length > 0
+function generateBlockFeedback(gate, unknowns, suggestions) {
+    var _a;
+    var unknownsList = unknowns.length > 0
         ? unknowns.join(', ')
         : 'general requirements';
     return {
-        gate,
+        gate: gate,
         status: 'block',
-        title: `Missing ${unknowns.length} critical proposition(s) to resolve`,
-        details: `The following must be clarified before proceeding: ${unknownsList}`,
-        suggestion: suggestions?.[0] ??
-            `Please specify the missing values using AskUserQuestion or select from options.`,
+        title: "Missing ".concat(unknowns.length, " critical proposition(s) to resolve"),
+        details: "The following must be clarified before proceeding: ".concat(unknownsList),
+        suggestion: (_a = suggestions === null || suggestions === void 0 ? void 0 : suggestions[0]) !== null && _a !== void 0 ? _a : "Please specify the missing values using AskUserQuestion or select from options.",
     };
 }
-// ============================================================
-// Exports for barrel file
-// ============================================================
-export { isImplementationTask, CRITICAL_PROPOSITIONS, PROPOSITION_PATTERNS, Q_VALUE_ORDER, };

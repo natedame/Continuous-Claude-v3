@@ -124,12 +124,14 @@ def ensure_tldr_daemon() -> str:
             tldr_dir.mkdir(parents=True, exist_ok=True)
             log_file = tldr_dir / "indexing.log"
 
-            # Start background indexing
-            subprocess.Popen(
-                ["tldr", "warm", "--project", project_dir],
-                stdout=open(log_file, "w"),
-                stderr=subprocess.STDOUT,
-            )
+            # Start background indexing (use context manager + start_new_session for proper FD handling)
+            with open(log_file, "w") as log_handle:
+                subprocess.Popen(
+                    ["tldr", "warm", "--project", project_dir],
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,  # Detach from parent
+                )
 
             # Write status file
             (tldr_dir / "status").write_text("indexing")
@@ -149,6 +151,7 @@ def ensure_tldr_daemon() -> str:
             ["tldr", "daemon", "start", "--project", project_dir],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,  # Detach from parent
         )
         return "TLDR: Starting daemon"
     except Exception as e:
@@ -180,14 +183,16 @@ def ensure_semantic_index() -> str | None:
         # Semantic index already built
         return None
 
-    # Build semantic index in background
+    # Build semantic index in background (use context manager + start_new_session for proper FD handling)
     try:
         log_file = tldr_dir / "semantic_indexing.log"
-        subprocess.Popen(
-            ["tldr", "semantic", "index", project_dir],
-            stdout=open(log_file, "w"),
-            stderr=subprocess.STDOUT,
-        )
+        with open(log_file, "w") as log_handle:
+            subprocess.Popen(
+                ["tldr", "semantic", "index", project_dir],
+                stdout=log_handle,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,  # Detach from parent
+            )
         return "TLDR: Building semantic index in background"
     except Exception as e:
         print(f"Warning: Failed to start semantic indexing: {e}", file=sys.stderr)

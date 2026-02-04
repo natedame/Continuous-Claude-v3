@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Shared database utilities for Claude Code hooks.
  *
@@ -10,11 +11,23 @@
  * - runPythonQuery(): Alternative that returns success/stdout/stderr object
  * - getActiveAgentCount(): Returns count of running agents (Phase 2: Resource Limits)
  */
-import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
-import { join } from 'path';
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isValidId = exports.SAFE_ID_PATTERN = void 0;
+exports.getDbPath = getDbPath;
+exports.queryDb = queryDb;
+exports.runPythonQuery = runPythonQuery;
+exports.runPythonQueryWithRetry = runPythonQueryWithRetry;
+exports.registerAgent = registerAgent;
+exports.completeAgent = completeAgent;
+exports.detectAndTagSwarm = detectAndTagSwarm;
+exports.getActiveAgentCount = getActiveAgentCount;
+const child_process_1 = require("child_process");
+const fs_1 = require("fs");
+const path_1 = require("path");
 // Re-export SAFE_ID_PATTERN and isValidId from pattern-router for convenience
-export { SAFE_ID_PATTERN, isValidId } from './pattern-router.js';
+var pattern_router_js_1 = require("./pattern-router.js");
+Object.defineProperty(exports, "SAFE_ID_PATTERN", { enumerable: true, get: function () { return pattern_router_js_1.SAFE_ID_PATTERN; } });
+Object.defineProperty(exports, "isValidId", { enumerable: true, get: function () { return pattern_router_js_1.isValidId; } });
 /**
  * Get the path to the coordination database.
  *
@@ -23,9 +36,9 @@ export { SAFE_ID_PATTERN, isValidId } from './pattern-router.js';
  *
  * @returns Absolute path to coordination.db
  */
-export function getDbPath() {
+function getDbPath() {
     const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-    return join(projectDir, '.claude', 'cache', 'agentica-coordination', 'coordination.db');
+    return (0, path_1.join)(projectDir, '.claude', 'cache', 'agentica-coordination', 'coordination.db');
 }
 /**
  * Execute a Python query against the coordination database.
@@ -38,9 +51,9 @@ export function getDbPath() {
  * @returns stdout from Python subprocess
  * @throws Error if Python subprocess fails
  */
-export function queryDb(pythonQuery, args) {
+function queryDb(pythonQuery, args) {
     // Use spawnSync with argument array to prevent command injection
-    const result = spawnSync('python3', ['-c', pythonQuery, ...args], {
+    const result = (0, child_process_1.spawnSync)('python3', ['-c', pythonQuery, ...args], {
         encoding: 'utf-8',
         maxBuffer: 1024 * 1024
     });
@@ -60,11 +73,12 @@ export function queryDb(pythonQuery, args) {
  * @param args - Arguments passed to Python (sys.argv[1], sys.argv[2], ...)
  * @returns Object with success boolean, stdout string, and stderr string
  */
-export function runPythonQuery(script, args) {
+function runPythonQuery(script, args) {
     try {
-        const result = spawnSync('python3', ['-c', script, ...args], {
+        const result = (0, child_process_1.spawnSync)('python3', ['-c', script, ...args], {
             encoding: 'utf-8',
-            maxBuffer: 1024 * 1024
+            maxBuffer: 1024 * 1024,
+            timeout: 30000 // Phase 3 audit fix: 30 second timeout prevents indefinite hangs
         });
         return {
             success: result.status === 0,
@@ -81,6 +95,51 @@ export function runPythonQuery(script, args) {
     }
 }
 /**
+ * Execute a Python query with exponential backoff retry on transient failures.
+ *
+ * PHASE 3 SELF-HEALING: Handles SQLite busy/locked errors with automatic retry.
+ * Retries up to 3 times with exponential backoff (100ms, 200ms, 400ms).
+ *
+ * Retry conditions:
+ * - Exit code != 0 AND stderr contains "database is locked" or "busy"
+ * - Exit code != 0 AND stderr contains "unable to open database"
+ *
+ * @param script - Python code to execute (receives args via sys.argv)
+ * @param args - Arguments passed to Python (sys.argv[1], sys.argv[2], ...)
+ * @param maxRetries - Maximum retry attempts (default: 3)
+ * @returns Object with success boolean, stdout string, stderr string, and retries count
+ */
+function runPythonQueryWithRetry(script, args, maxRetries = 3) {
+    let lastResult = { success: false, stdout: '', stderr: '' };
+    let retries = 0;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        lastResult = runPythonQuery(script, args);
+        // Success - no retry needed
+        if (lastResult.success) {
+            return { ...lastResult, retries };
+        }
+        // Check if error is retryable
+        const stderr = lastResult.stderr.toLowerCase();
+        const isRetryable = stderr.includes('database is locked') ||
+            stderr.includes('busy') ||
+            stderr.includes('unable to open database') ||
+            stderr.includes('disk i/o error');
+        // If not retryable or last attempt, return immediately
+        if (!isRetryable || attempt === maxRetries) {
+            return { ...lastResult, retries };
+        }
+        // Exponential backoff: 100ms, 200ms, 400ms
+        const backoffMs = 100 * Math.pow(2, attempt);
+        retries++;
+        // Synchronous sleep (blocking but acceptable for hooks)
+        const start = Date.now();
+        while (Date.now() - start < backoffMs) {
+            // Busy wait - hooks are short-lived, this is acceptable
+        }
+    }
+    return { ...lastResult, retries };
+}
+/**
  * Register a new agent in the coordination database.
  *
  * Inserts a new agent record with status='running'.
@@ -93,7 +152,7 @@ export function runPythonQuery(script, args) {
  * @param pid - Process ID for orphan detection (optional)
  * @returns Object with success boolean and any error message
  */
-export function registerAgent(agentId, sessionId, pattern = null, pid = null) {
+function registerAgent(agentId, sessionId, pattern = null, pid = null) {
     const dbPath = getDbPath();
     // Detect source: if AGENTICA_SERVER env var is set, it's from agentica
     // Otherwise it's from the CLI (Task tool)
@@ -191,10 +250,10 @@ except Exception as e:
  * @param errorMessage - Optional error message for failed status
  * @returns Object with success boolean and any error message
  */
-export function completeAgent(agentId, status = 'completed', errorMessage = null) {
+function completeAgent(agentId, status = 'completed', errorMessage = null) {
     const dbPath = getDbPath();
     // Return success if database doesn't exist (nothing to update)
-    if (!existsSync(dbPath)) {
+    if (!(0, fs_1.existsSync)(dbPath)) {
         return { success: true };
     }
     const pythonScript = `
@@ -265,9 +324,9 @@ except Exception as e:
  * @param sessionId - Session to check for concurrent spawns
  * @returns true if swarm pattern was detected and applied
  */
-export function detectAndTagSwarm(sessionId) {
+function detectAndTagSwarm(sessionId) {
     const dbPath = getDbPath();
-    if (!existsSync(dbPath)) {
+    if (!(0, fs_1.existsSync)(dbPath)) {
         return false;
     }
     const pythonScript = `
@@ -346,10 +405,10 @@ except Exception as e:
  *
  * @returns Number of running agents, or 0 on any error
  */
-export function getActiveAgentCount() {
+function getActiveAgentCount() {
     const dbPath = getDbPath();
     // Return 0 if database doesn't exist
-    if (!existsSync(dbPath)) {
+    if (!(0, fs_1.existsSync)(dbPath)) {
         return 0;
     }
     const pythonScript = `

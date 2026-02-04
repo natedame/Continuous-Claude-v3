@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Task Detector - Phase 7 of Self-Improving Skill System
  *
@@ -17,11 +18,22 @@
  *
  * Plan: thoughts/shared/plans/self-improving-skill-system.md (Phase 7)
  */
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.detectTask = detectTask;
 /**
  * Implementation task indicators.
  * Strong signals that the user wants to build/create something.
  */
-const IMPLEMENTATION_INDICATORS = [
+var IMPLEMENTATION_INDICATORS = [
     { pattern: /\bimplement\b/i, keyword: 'implement', type: 'implementation', weight: 0.9 },
     { pattern: /\bbuild\b/i, keyword: 'build', type: 'implementation', weight: 0.9 },
     { pattern: /\bcreate\b/i, keyword: 'create', type: 'implementation', weight: 0.8 },
@@ -37,7 +49,7 @@ const IMPLEMENTATION_INDICATORS = [
  * Debug task indicators.
  * Signals that the user wants to fix or investigate an issue.
  */
-const DEBUG_INDICATORS = [
+var DEBUG_INDICATORS = [
     { pattern: /\bdebug\b/i, keyword: 'debug', type: 'debug', weight: 0.9 },
     { pattern: /\bfix\s+(the\s+)?(bug|issue|error|problem)/i, keyword: 'fix bug', type: 'debug', weight: 0.9 },
     { pattern: /\binvestigate\b/i, keyword: 'investigate', type: 'debug', weight: 0.85 },
@@ -50,7 +62,7 @@ const DEBUG_INDICATORS = [
  * Research task indicators.
  * Signals that the user wants to learn about or explore options.
  */
-const RESEARCH_INDICATORS = [
+var RESEARCH_INDICATORS = [
     { pattern: /\bhow\s+do\s+I\b/i, keyword: 'how do I', type: 'research', weight: 0.85 },
     { pattern: /\bfind\s+out\b/i, keyword: 'find out', type: 'research', weight: 0.8 },
     { pattern: /\bresearch\b/i, keyword: 'research', type: 'research', weight: 0.85 },
@@ -63,7 +75,7 @@ const RESEARCH_INDICATORS = [
  * Planning task indicators.
  * Signals that the user wants to design or plan something.
  */
-const PLANNING_INDICATORS = [
+var PLANNING_INDICATORS = [
     { pattern: /\bplan\b/i, keyword: 'plan', type: 'planning', weight: 0.85 },
     { pattern: /\bdesign\b/i, keyword: 'design', type: 'planning', weight: 0.85 },
     { pattern: /\barchitect\b/i, keyword: 'architect', type: 'planning', weight: 0.9 },
@@ -76,7 +88,7 @@ const PLANNING_INDICATORS = [
  * Conversational patterns - these NEGATE task detection.
  * When matched, they reduce confidence that this is a task.
  */
-const CONVERSATIONAL_PATTERNS = [
+var CONVERSATIONAL_PATTERNS = [
     /\bwhat\s+is\b/i,
     /\bexplain\b/i,
     /\bshow\s+me\b/i,
@@ -100,12 +112,7 @@ const CONVERSATIONAL_PATTERNS = [
 /**
  * All task indicators combined.
  */
-const ALL_TASK_INDICATORS = [
-    ...IMPLEMENTATION_INDICATORS,
-    ...DEBUG_INDICATORS,
-    ...RESEARCH_INDICATORS,
-    ...PLANNING_INDICATORS,
-];
+var ALL_TASK_INDICATORS = __spreadArray(__spreadArray(__spreadArray(__spreadArray([], IMPLEMENTATION_INDICATORS, true), DEBUG_INDICATORS, true), RESEARCH_INDICATORS, true), PLANNING_INDICATORS, true);
 /**
  * Detect if a prompt is a task vs conversational.
  *
@@ -118,22 +125,23 @@ const ALL_TASK_INDICATORS = [
  * @param prompt - The user's prompt to analyze
  * @returns TaskDetectionResult
  */
-export function detectTask(prompt) {
-    if (!prompt?.trim()) {
+function detectTask(prompt) {
+    if (!(prompt === null || prompt === void 0 ? void 0 : prompt.trim())) {
         return {
             isTask: false,
             confidence: 0,
             triggers: [],
         };
     }
-    const promptLower = prompt.toLowerCase();
+    var promptLower = prompt.toLowerCase();
     // Check for conversational patterns first
-    const conversationalMatches = CONVERSATIONAL_PATTERNS.filter(p => p.test(promptLower));
+    var conversationalMatches = CONVERSATIONAL_PATTERNS.filter(function (p) { return p.test(promptLower); });
     // Find all task indicator matches
-    const matches = [];
-    for (const indicator of ALL_TASK_INDICATORS) {
+    var matches = [];
+    for (var _i = 0, ALL_TASK_INDICATORS_1 = ALL_TASK_INDICATORS; _i < ALL_TASK_INDICATORS_1.length; _i++) {
+        var indicator = ALL_TASK_INDICATORS_1[_i];
         if (indicator.pattern.test(promptLower)) {
-            matches.push({ indicator, keyword: indicator.keyword });
+            matches.push({ indicator: indicator, keyword: indicator.keyword });
         }
     }
     // If no task indicators matched, not a task
@@ -148,14 +156,15 @@ export function detectTask(prompt) {
     // 1. Number of matches
     // 2. Weight of matches
     // 3. Penalty for conversational patterns
-    let totalWeight = 0;
-    for (const match of matches) {
+    var totalWeight = 0;
+    for (var _a = 0, matches_1 = matches; _a < matches_1.length; _a++) {
+        var match = matches_1[_a];
         totalWeight += match.indicator.weight;
     }
     // Average weight, boosted slightly for multiple matches
-    let confidence = totalWeight / matches.length;
+    var confidence = totalWeight / matches.length;
     // Boost for multiple different task indicators (capped at 0.15 boost)
-    const uniqueTypes = new Set(matches.map(m => m.indicator.type));
+    var uniqueTypes = new Set(matches.map(function (m) { return m.indicator.type; }));
     if (uniqueTypes.size > 1) {
         confidence += 0.1;
     }
@@ -177,14 +186,14 @@ export function detectTask(prompt) {
     // Normalize confidence to 0-1 range
     confidence = Math.min(1, Math.max(0, confidence));
     // Determine primary task type (highest weight match)
-    const sortedMatches = [...matches].sort((a, b) => b.indicator.weight - a.indicator.weight);
-    const primaryType = sortedMatches[0].indicator.type;
+    var sortedMatches = __spreadArray([], matches, true).sort(function (a, b) { return b.indicator.weight - a.indicator.weight; });
+    var primaryType = sortedMatches[0].indicator.type;
     // Extract unique triggers
-    const triggers = [...new Set(matches.map(m => m.keyword))];
+    var triggers = __spreadArray([], new Set(matches.map(function (m) { return m.keyword; })), true);
     return {
         isTask: true,
         taskType: primaryType,
-        confidence,
-        triggers,
+        confidence: confidence,
+        triggers: triggers,
     };
 }

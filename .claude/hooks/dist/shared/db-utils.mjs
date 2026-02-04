@@ -1,179 +1,73 @@
-/**
- * Shared database utilities for Claude Code hooks.
- *
- * Extracted from pre-tool-use-broadcast.ts as part of the
- * pattern-aware hooks architecture (Phase 2).
- *
- * Exports:
- * - getDbPath(): Returns path to coordination.db
- * - queryDb(): Executes Python subprocess to query SQLite
- * - runPythonQuery(): Alternative that returns success/stdout/stderr object
- * - getActiveAgentCount(): Returns count of running agents (Phase 2: Resource Limits)
- */
-
-import { spawnSync } from 'child_process';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import type { QueryResult } from './types.js';
-
-// Re-export SAFE_ID_PATTERN and isValidId from pattern-router for convenience
-export { SAFE_ID_PATTERN, isValidId } from './pattern-router.js';
-
-/**
- * Get the path to the coordination database.
- *
- * Uses CLAUDE_PROJECT_DIR environment variable if set,
- * otherwise falls back to process.cwd().
- *
- * @returns Absolute path to coordination.db
- */
-export function getDbPath(): string {
+import { spawnSync } from "child_process";
+import { existsSync } from "fs";
+import { join } from "path";
+import { SAFE_ID_PATTERN, isValidId } from "./pattern-router.js";
+function getDbPath() {
   const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  return join(projectDir, '.claude', 'cache',
-    'agentica-coordination', 'coordination.db');
+  return join(
+    projectDir,
+    ".claude",
+    "cache",
+    "agentica-coordination",
+    "coordination.db"
+  );
 }
-
-/**
- * Execute a Python query against the coordination database.
- *
- * Uses spawnSync with argument array to prevent command injection.
- * The Python code receives arguments via sys.argv.
- *
- * @param pythonQuery - Python code to execute (receives args via sys.argv)
- * @param args - Arguments passed to Python (sys.argv[1], sys.argv[2], ...)
- * @returns stdout from Python subprocess
- * @throws Error if Python subprocess fails
- */
-export function queryDb(pythonQuery: string, args: string[]): string {
-  // Use spawnSync with argument array to prevent command injection
-  const result = spawnSync('python3', ['-c', pythonQuery, ...args], {
-    encoding: 'utf-8',
+function queryDb(pythonQuery, args) {
+  const result = spawnSync("python3", ["-c", pythonQuery, ...args], {
+    encoding: "utf-8",
     maxBuffer: 1024 * 1024
   });
-
   if (result.status !== 0) {
     const errorMsg = result.stderr || `Python exited with code ${result.status}`;
     throw new Error(`Python query failed: ${errorMsg}`);
   }
-
   return result.stdout.trim();
 }
-
-/**
- * Execute a Python query and return structured result.
- *
- * Unlike queryDb(), this function does not throw on error.
- * Instead, it returns a result object with success, stdout, and stderr.
- *
- * @param script - Python code to execute (receives args via sys.argv)
- * @param args - Arguments passed to Python (sys.argv[1], sys.argv[2], ...)
- * @returns Object with success boolean, stdout string, and stderr string
- */
-export function runPythonQuery(script: string, args: string[]): QueryResult {
+function runPythonQuery(script, args) {
   try {
-    const result = spawnSync('python3', ['-c', script, ...args], {
-      encoding: 'utf-8',
+    const result = spawnSync("python3", ["-c", script, ...args], {
+      encoding: "utf-8",
       maxBuffer: 1024 * 1024,
-      timeout: 30000  // Phase 3 audit fix: 30 second timeout prevents indefinite hangs
+      timeout: 3e4
+      // Phase 3 audit fix: 30 second timeout prevents indefinite hangs
     });
-
     return {
       success: result.status === 0,
-      stdout: result.stdout?.trim() || '',
-      stderr: result.stderr || ''
+      stdout: result.stdout?.trim() || "",
+      stderr: result.stderr || ""
     };
   } catch (err) {
     return {
       success: false,
-      stdout: '',
+      stdout: "",
       stderr: String(err)
     };
   }
 }
-
-/**
- * Execute a Python query with exponential backoff retry on transient failures.
- *
- * PHASE 3 SELF-HEALING: Handles SQLite busy/locked errors with automatic retry.
- * Retries up to 3 times with exponential backoff (100ms, 200ms, 400ms).
- *
- * Retry conditions:
- * - Exit code != 0 AND stderr contains "database is locked" or "busy"
- * - Exit code != 0 AND stderr contains "unable to open database"
- *
- * @param script - Python code to execute (receives args via sys.argv)
- * @param args - Arguments passed to Python (sys.argv[1], sys.argv[2], ...)
- * @param maxRetries - Maximum retry attempts (default: 3)
- * @returns Object with success boolean, stdout string, stderr string, and retries count
- */
-export function runPythonQueryWithRetry(
-  script: string,
-  args: string[],
-  maxRetries: number = 3
-): QueryResult & { retries: number } {
-  let lastResult: QueryResult = { success: false, stdout: '', stderr: '' };
+function runPythonQueryWithRetry(script, args, maxRetries = 3) {
+  let lastResult = { success: false, stdout: "", stderr: "" };
   let retries = 0;
-
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     lastResult = runPythonQuery(script, args);
-
-    // Success - no retry needed
     if (lastResult.success) {
       return { ...lastResult, retries };
     }
-
-    // Check if error is retryable
     const stderr = lastResult.stderr.toLowerCase();
-    const isRetryable =
-      stderr.includes('database is locked') ||
-      stderr.includes('busy') ||
-      stderr.includes('unable to open database') ||
-      stderr.includes('disk i/o error');
-
-    // If not retryable or last attempt, return immediately
+    const isRetryable = stderr.includes("database is locked") || stderr.includes("busy") || stderr.includes("unable to open database") || stderr.includes("disk i/o error");
     if (!isRetryable || attempt === maxRetries) {
       return { ...lastResult, retries };
     }
-
-    // Exponential backoff: 100ms, 200ms, 400ms
     const backoffMs = 100 * Math.pow(2, attempt);
     retries++;
-
-    // Synchronous sleep (blocking but acceptable for hooks)
     const start = Date.now();
     while (Date.now() - start < backoffMs) {
-      // Busy wait - hooks are short-lived, this is acceptable
     }
   }
-
   return { ...lastResult, retries };
 }
-
-/**
- * Register a new agent in the coordination database.
- *
- * Inserts a new agent record with status='running'.
- * Creates the database and tables if they don't exist.
- * Automatically detects source from environment (AGENTICA_SERVER env var).
- *
- * @param agentId - Unique agent identifier
- * @param sessionId - Session that spawned the agent
- * @param pattern - Coordination pattern (swarm, hierarchical, etc.)
- * @param pid - Process ID for orphan detection (optional)
- * @returns Object with success boolean and any error message
- */
-export function registerAgent(
-  agentId: string,
-  sessionId: string,
-  pattern: string | null = null,
-  pid: number | null = null
-): { success: boolean; error?: string } {
+function registerAgent(agentId, sessionId, pattern = null, pid = null) {
   const dbPath = getDbPath();
-
-  // Detect source: if AGENTICA_SERVER env var is set, it's from agentica
-  // Otherwise it's from the CLI (Task tool)
-  const source = process.env.AGENTICA_SERVER ? 'agentica' : 'cli';
-
+  const source = process.env.AGENTICA_SERVER ? "agentica" : "cli";
   const pythonScript = `
 import sqlite3
 import sys
@@ -240,50 +134,28 @@ except Exception as e:
     print(f"error: {e}")
     sys.exit(1)
 `;
-
   const args = [
     dbPath,
     agentId,
     sessionId,
-    pattern || 'null',
-    pid !== null ? String(pid) : 'null',
+    pattern || "null",
+    pid !== null ? String(pid) : "null",
     source
   ];
-
   const result = runPythonQuery(pythonScript, args);
-
-  if (!result.success || result.stdout !== 'ok') {
+  if (!result.success || result.stdout !== "ok") {
     return {
       success: false,
-      error: result.stderr || result.stdout || 'Unknown error'
+      error: result.stderr || result.stdout || "Unknown error"
     };
   }
-
   return { success: true };
 }
-
-/**
- * Mark an agent as completed in the coordination database.
- *
- * Updates the agent's status and sets completed_at timestamp.
- *
- * @param agentId - Agent identifier to complete
- * @param status - Final status ('completed' or 'failed')
- * @param errorMessage - Optional error message for failed status
- * @returns Object with success boolean and any error message
- */
-export function completeAgent(
-  agentId: string,
-  status: string = 'completed',
-  errorMessage: string | null = null
-): { success: boolean; error?: string } {
+function completeAgent(agentId, status = "completed", errorMessage = null) {
   const dbPath = getDbPath();
-
-  // Return success if database doesn't exist (nothing to update)
   if (!existsSync(dbPath)) {
     return { success: true };
   }
-
   const pythonScript = `
 import sqlite3
 import sys
@@ -325,45 +197,26 @@ except Exception as e:
     print(f"error: {e}")
     sys.exit(1)
 `;
-
   const args = [
     dbPath,
     agentId,
     status,
-    errorMessage || 'null'
+    errorMessage || "null"
   ];
-
   const result = runPythonQuery(pythonScript, args);
-
-  if (!result.success || result.stdout !== 'ok') {
+  if (!result.success || result.stdout !== "ok") {
     return {
       success: false,
-      error: result.stderr || result.stdout || 'Unknown error'
+      error: result.stderr || result.stdout || "Unknown error"
     };
   }
-
   return { success: true };
 }
-
-/**
- * Detect if this agent is part of a swarm (concurrent spawn pattern).
- *
- * Checks if there are multiple agents in the same session spawned within
- * a short time window (5 seconds). If so, updates all of them to pattern="swarm".
- *
- * This enables automatic swarm detection for Claude Code Task tool spawns
- * without requiring explicit PATTERN_TYPE environment variable.
- *
- * @param sessionId - Session to check for concurrent spawns
- * @returns true if swarm pattern was detected and applied
- */
-export function detectAndTagSwarm(sessionId: string): boolean {
+function detectAndTagSwarm(sessionId) {
   const dbPath = getDbPath();
-
   if (!existsSync(dbPath)) {
     return false;
   }
-
   const pythonScript = `
 import sqlite3
 import sys
@@ -421,37 +274,17 @@ except Exception as e:
     print(f"error: {e}")
     sys.exit(1)
 `;
-
   const result = runPythonQuery(pythonScript, [dbPath, sessionId]);
-
   if (!result.success) {
     return false;
   }
-
-  return result.stdout.startsWith('swarm:');
+  return result.stdout.startsWith("swarm:");
 }
-
-/**
- * Get the count of active (running) agents across all sessions.
- *
- * Queries the coordination database for agents with status='running'.
- * Returns 0 if:
- * - Database doesn't exist
- * - Database query fails
- * - agents table doesn't exist
- *
- * Uses runPythonQuery() pattern to safely execute the SQLite query.
- *
- * @returns Number of running agents, or 0 on any error
- */
-export function getActiveAgentCount(): number {
+function getActiveAgentCount() {
   const dbPath = getDbPath();
-
-  // Return 0 if database doesn't exist
   if (!existsSync(dbPath)) {
     return 0;
   }
-
   const pythonScript = `
 import sqlite3
 import sys
@@ -488,13 +321,22 @@ try:
 except Exception:
     print("0")
 `;
-
   const result = runPythonQuery(pythonScript, [dbPath]);
-
   if (!result.success) {
     return 0;
   }
-
   const count = parseInt(result.stdout, 10);
   return isNaN(count) ? 0 : count;
 }
+export {
+  SAFE_ID_PATTERN,
+  completeAgent,
+  detectAndTagSwarm,
+  getActiveAgentCount,
+  getDbPath,
+  isValidId,
+  queryDb,
+  registerAgent,
+  runPythonQuery,
+  runPythonQueryWithRetry
+};

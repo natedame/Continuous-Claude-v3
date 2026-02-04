@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Erotetic Termination Logic - Phase 9 of Self-Improving Skill System
  *
@@ -8,6 +9,22 @@
  *
  * Plan reference: thoughts/shared/plans/self-improving-skill-system.md (Phase 9)
  */
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_QUESTIONS_TOTAL = void 0;
+exports.detectDefaultsIntent = detectDefaultsIntent;
+exports.applyDefaults = applyDefaults;
+exports.checkTermination = checkTermination;
 // =============================================================================
 // Constants
 // =============================================================================
@@ -15,12 +32,12 @@
  * Maximum total questions to ask before terminating.
  * This is the hard cap for the erotetic loop.
  */
-export const MAX_QUESTIONS_TOTAL = 4;
+exports.MAX_QUESTIONS_TOTAL = 4;
 /**
  * Patterns that indicate user wants to use defaults.
  * These trigger immediate termination with defaults applied.
  */
-const USE_DEFAULTS_PATTERNS = [
+var USE_DEFAULTS_PATTERNS = [
     /\bjust\s+use\s+defaults?\b/i,
     /\bgo\s+with\s+defaults?\b/i,
     /\buse\s+(the\s+)?default\s+values?\b/i,
@@ -41,9 +58,9 @@ const USE_DEFAULTS_PATTERNS = [
  * @param response - The user's response text
  * @returns true if user wants to use defaults
  */
-export function detectDefaultsIntent(response) {
-    const text = response.toLowerCase().trim();
-    return USE_DEFAULTS_PATTERNS.some(pattern => pattern.test(text));
+function detectDefaultsIntent(response) {
+    var text = response.toLowerCase().trim();
+    return USE_DEFAULTS_PATTERNS.some(function (pattern) { return pattern.test(text); });
 }
 /**
  * Apply default values to unresolved Q-heuristics.
@@ -53,14 +70,16 @@ export function detectDefaultsIntent(response) {
  * @param unresolved - Q-heuristics that need default values
  * @returns New object with all values (resolved + defaults)
  */
-export function applyDefaults(resolved, unresolved) {
+function applyDefaults(resolved, unresolved) {
+    var _a;
     // Create a new object (don't mutate input)
-    const result = { ...resolved };
+    var result = __assign({}, resolved);
     // Apply defaults for unresolved questions
-    for (const q of unresolved) {
+    for (var _i = 0, unresolved_1 = unresolved; _i < unresolved_1.length; _i++) {
+        var q = unresolved_1[_i];
         // Only apply default if not already resolved
         if (!(q.id in result)) {
-            result[q.id] = q.default ?? '';
+            result[q.id] = (_a = q.default) !== null && _a !== void 0 ? _a : '';
         }
     }
     return result;
@@ -77,14 +96,14 @@ export function applyDefaults(resolved, unresolved) {
  * @param state - Current termination state
  * @returns Termination result with reason and final resolution
  */
-export function checkTermination(state) {
-    const { resolved, unresolved, questionsAsked, userRequestedDefaults } = state;
+function checkTermination(state) {
+    var resolved = state.resolved, unresolved = state.unresolved, questionsAsked = state.questionsAsked, userRequestedDefaults = state.userRequestedDefaults;
     // Priority 1: All Q-heuristics resolved
     if (unresolved.length === 0) {
         return {
             shouldTerminate: true,
             reason: 'all_resolved',
-            finalResolution: { ...resolved },
+            finalResolution: __assign({}, resolved),
         };
     }
     // Priority 2: User explicitly requested defaults
@@ -96,7 +115,7 @@ export function checkTermination(state) {
         };
     }
     // Priority 3: Max questions reached
-    if (questionsAsked >= MAX_QUESTIONS_TOTAL) {
+    if (questionsAsked >= exports.MAX_QUESTIONS_TOTAL) {
         return {
             shouldTerminate: true,
             reason: 'max_questions',
@@ -107,6 +126,6 @@ export function checkTermination(state) {
     return {
         shouldTerminate: false,
         reason: 'continue',
-        finalResolution: { ...resolved }, // Return current state
+        finalResolution: __assign({}, resolved), // Return current state
     };
 }

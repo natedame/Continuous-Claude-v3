@@ -1,22 +1,32 @@
+"use strict";
 /**
  * Project State Management
  *
  * Tracks project-level state that's shared across all sessions.
  * Used for passing context to forked skills.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'fs';
-import { join, dirname } from 'path';
-const PROJECT_STATE_VERSION = '1.0';
-export function getProjectStatePath(projectDir) {
-    return join(projectDir, '.claude', 'cache', 'project-state.json');
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getProjectStatePath = getProjectStatePath;
+exports.loadProjectState = loadProjectState;
+exports.saveProjectState = saveProjectState;
+exports.setActivePlan = setActivePlan;
+exports.setActiveSpec = setActiveSpec;
+exports.findLatestFile = findLatestFile;
+exports.getActivePlanOrLatest = getActivePlanOrLatest;
+exports.getActiveSpecOrLatest = getActiveSpecOrLatest;
+var fs_1 = require("fs");
+var path_1 = require("path");
+var PROJECT_STATE_VERSION = '1.0';
+function getProjectStatePath(projectDir) {
+    return (0, path_1.join)(projectDir, '.claude', 'cache', 'project-state.json');
 }
-export function loadProjectState(projectDir) {
-    const path = getProjectStatePath(projectDir);
-    if (existsSync(path)) {
+function loadProjectState(projectDir) {
+    var path = getProjectStatePath(projectDir);
+    if ((0, fs_1.existsSync)(path)) {
         try {
-            return JSON.parse(readFileSync(path, 'utf-8'));
+            return JSON.parse((0, fs_1.readFileSync)(path, 'utf-8'));
         }
-        catch {
+        catch (_a) {
             // Corrupted file, start fresh
         }
     }
@@ -27,22 +37,22 @@ export function loadProjectState(projectDir) {
         updatedAt: new Date().toISOString()
     };
 }
-export function saveProjectState(projectDir, state) {
-    const path = getProjectStatePath(projectDir);
-    const dir = dirname(path);
-    if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+function saveProjectState(projectDir, state) {
+    var path = getProjectStatePath(projectDir);
+    var dir = (0, path_1.dirname)(path);
+    if (!(0, fs_1.existsSync)(dir)) {
+        (0, fs_1.mkdirSync)(dir, { recursive: true });
     }
     state.updatedAt = new Date().toISOString();
-    writeFileSync(path, JSON.stringify(state, null, 2));
+    (0, fs_1.writeFileSync)(path, JSON.stringify(state, null, 2));
 }
-export function setActivePlan(projectDir, planPath) {
-    const state = loadProjectState(projectDir);
+function setActivePlan(projectDir, planPath) {
+    var state = loadProjectState(projectDir);
     state.activePlan = planPath;
     saveProjectState(projectDir, state);
 }
-export function setActiveSpec(projectDir, specPath) {
-    const state = loadProjectState(projectDir);
+function setActiveSpec(projectDir, specPath) {
+    var state = loadProjectState(projectDir);
     state.activeSpec = specPath;
     saveProjectState(projectDir, state);
 }
@@ -50,43 +60,45 @@ export function setActiveSpec(projectDir, specPath) {
  * Find the latest file in a directory matching a pattern.
  * Uses filename timestamps (YYYY-MM-DD) or mtime as fallback.
  */
-export function findLatestFile(dir, pattern = /\.md$/) {
-    if (!existsSync(dir))
+function findLatestFile(dir, pattern) {
+    if (pattern === void 0) { pattern = /\.md$/; }
+    if (!(0, fs_1.existsSync)(dir))
         return null;
     try {
-        const files = readdirSync(dir)
-            .filter(f => pattern.test(f))
-            .map(f => {
-            const fullPath = join(dir, f);
-            const stat = statSync(fullPath);
+        var files = (0, fs_1.readdirSync)(dir)
+            .filter(function (f) { return pattern.test(f); })
+            .map(function (f) {
+            var fullPath = (0, path_1.join)(dir, f);
+            var stat = (0, fs_1.statSync)(fullPath);
             // Try to extract date from filename (YYYY-MM-DD format)
-            const dateMatch = f.match(/^(\d{4}-\d{2}-\d{2})/);
-            const fileDate = dateMatch ? new Date(dateMatch[1]).getTime() : stat.mtimeMs;
+            var dateMatch = f.match(/^(\d{4}-\d{2}-\d{2})/);
+            var fileDate = dateMatch ? new Date(dateMatch[1]).getTime() : stat.mtimeMs;
             return { path: fullPath, date: fileDate };
         })
-            .sort((a, b) => b.date - a.date);
+            .sort(function (a, b) { return b.date - a.date; });
         return files.length > 0 ? files[0].path : null;
     }
-    catch {
+    catch (_a) {
         return null;
     }
 }
 /**
  * Get the active plan, falling back to the latest plan file.
  */
-export function getActivePlanOrLatest(projectDir) {
-    const state = loadProjectState(projectDir);
-    if (state.activePlan && existsSync(state.activePlan)) {
+function getActivePlanOrLatest(projectDir) {
+    var state = loadProjectState(projectDir);
+    if (state.activePlan && (0, fs_1.existsSync)(state.activePlan)) {
         return state.activePlan;
     }
     // Fallback: find latest plan
-    const planDirs = [
-        join(projectDir, 'thoughts', 'shared', 'plans'),
-        join(projectDir, 'plans'),
-        join(projectDir, 'specs')
+    var planDirs = [
+        (0, path_1.join)(projectDir, 'thoughts', 'shared', 'plans'),
+        (0, path_1.join)(projectDir, 'plans'),
+        (0, path_1.join)(projectDir, 'specs')
     ];
-    for (const dir of planDirs) {
-        const latest = findLatestFile(dir);
+    for (var _i = 0, planDirs_1 = planDirs; _i < planDirs_1.length; _i++) {
+        var dir = planDirs_1[_i];
+        var latest = findLatestFile(dir);
         if (latest)
             return latest;
     }
@@ -95,18 +107,19 @@ export function getActivePlanOrLatest(projectDir) {
 /**
  * Get the active spec, falling back to the latest spec file.
  */
-export function getActiveSpecOrLatest(projectDir) {
-    const state = loadProjectState(projectDir);
-    if (state.activeSpec && existsSync(state.activeSpec)) {
+function getActiveSpecOrLatest(projectDir) {
+    var state = loadProjectState(projectDir);
+    if (state.activeSpec && (0, fs_1.existsSync)(state.activeSpec)) {
         return state.activeSpec;
     }
     // Fallback: find latest spec
-    const specDirs = [
-        join(projectDir, 'thoughts', 'shared', 'specs'),
-        join(projectDir, 'specs')
+    var specDirs = [
+        (0, path_1.join)(projectDir, 'thoughts', 'shared', 'specs'),
+        (0, path_1.join)(projectDir, 'specs')
     ];
-    for (const dir of specDirs) {
-        const latest = findLatestFile(dir);
+    for (var _i = 0, specDirs_1 = specDirs; _i < specDirs_1.length; _i++) {
+        var dir = specDirs_1[_i];
+        var latest = findLatestFile(dir);
         if (latest)
             return latest;
     }

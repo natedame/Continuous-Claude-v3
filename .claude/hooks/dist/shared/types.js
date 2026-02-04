@@ -1,3 +1,4 @@
+"use strict";
 /**
  * Shared type definitions for Claude Code hooks.
  *
@@ -11,4 +12,4 @@
  * Part of the pattern-aware hooks infrastructure.
  * See: thoughts/shared/plans/2025-12-28-pattern-aware-hooks.md
  */
-export {};
+Object.defineProperty(exports, "__esModule", { value: true });
