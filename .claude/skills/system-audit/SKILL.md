@@ -216,6 +216,11 @@ Key checks:
 - Task docs point to Playwright Service API, not direct execution
 - PLAN.template.md has correct E2E guidance
 
+**Guardrail (swarms don't know about this):**
+- Hook: `~/.claude-swarm/hooks/dist/playwright-guard.mjs`
+- Blocks direct `npx playwright test` in swarm containers
+- Redirects swarm to use Playwright Service API instead
+
 Reference: Incident `2026-02-02-playwright-confusion.md` - swarms tried running Playwright directly in containers.
 
 **10b. [Future] Host.docker.internal Audit:**
