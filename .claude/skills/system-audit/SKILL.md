@@ -58,6 +58,18 @@ For EACH incident report:
 ### 5. Port Management System
 Port issues frequently cause bugs. The system uses `ports.yaml` as source of truth.
 
+**Comprehensive Port Audit:**
+```bash
+~/local-ai/bin/port-audit              # Full audit with categorized results
+~/local-ai/bin/port-audit --fix-only   # Only show must-fix items
+~/local-ai/bin/port-audit --summary    # Just the counts
+```
+
+The port-audit script scans for ALL port patterns (known AND unknown), categorizes findings as:
+- 🔴 MUST FIX - Hardcoded ports in executable code
+- 🟡 REVIEW - Docs, configs, tests (may be intentional)
+- 🟢 ACCEPTABLE - Uses env var fallback pattern
+
 **Registry Validation:**
 ```bash
 ~/local-ai/bin/port validate   # Check for conflicts
@@ -73,12 +85,6 @@ Port issues frequently cause bugs. The system uses `ports.yaml` as source of tru
 - Pre-commit hook exists: `ls -la ~/local-ai/.git/hooks/pre-commit`
 - Test hook catches bad patterns: `echo 'PORT=9999' | grep -E "PORT\s*=\s*[0-9]+"`
 - Swarms have port access: `docker exec <swarm> cat /app/ports.yaml`
-
-**Hard-coded Port Detection:**
-```bash
-grep -rn "PORT\s*=\s*[0-9]" ~/local-ai/*/src --include="*.ts" | grep -v "process.env"
-grep -rn "localhost:[0-9]" ~/local-ai/*/src --include="*.ts" --include="*.tsx"
-```
 
 ### 6. CAO & Swarm Configuration
 CAO (CLI Agent Orchestrator) manages multi-agent swarms. Version mismatches cause silent failures.
@@ -123,19 +129,82 @@ ls ~/.aws/cli-agent-orchestrator/agent-context/
 - Monitor network connections and port usage
 - Check for orphaned containers or volumes
 
-### 7. Disaster Recovery
-- Verify backup strategy exists and is documented
-- Check what data is being backed up
-- Verify recovery procedures are documented
-- Test that critical services can be restored
+### 8. Disaster Recovery
 
-### 8. Statusboard Metrics
+**Backup System Health:**
+```bash
+# Check last backup timestamp (should be <24 hours)
+cat ~/Documents/backups/last-backup.txt
+
+# Verify backup launchd is loaded
+launchctl list | grep disaster-recovery
+
+# Check backup script exists and is executable
+ls -la ~/local-ai/bin/disaster-recovery-backup.sh
+
+# Review recent backup log
+tail -30 ~/Documents/backups/backup.log
+```
+
+**Backup Contents Verification:**
+```bash
+# Check all expected backup subdirectories exist
+ls -la ~/Documents/backups/
+# Expected: secrets/, launchagents/, db/, dotfiles-snapshot/, Brewfile, last-backup.txt
+
+# Verify database dumps are recent and non-empty
+ls -lh ~/Documents/backups/db/
+
+# Check secrets are captured
+ls ~/Documents/backups/secrets/
+```
+
+**Git Repository Coverage:**
+```bash
+# Check all repos have remotes (no local-only repos)
+find ~/local-ai -maxdepth 2 -name ".git" -type d | while read git; do
+  dir=$(dirname "$git")
+  cd "$dir"
+  remote=$(git remote -v 2>/dev/null | head -1)
+  if [ -z "$remote" ]; then echo "NO REMOTE: $dir"; fi
+done
+
+# Check for uncommitted work in key repos
+cd ~/local-ai && git status --porcelain | wc -l
+cd ~/local-ai/ccv3 && git status --porcelain | wc -l
+```
+
+**Google Drive Sync Verification:**
+```bash
+# Verify these folders exist (synced by Google Drive)
+ls -d ~/Documents ~/Desktop ~/projects ~/archives ~/cao-launcher 2>/dev/null
+```
+
+**Dotfiles Repo (if exists):**
+```bash
+# Check dotfiles repo is current
+if [ -d ~/dotfiles/.git ]; then
+  cd ~/dotfiles && git status && git log -1 --format="%H %s"
+fi
+```
+
+**Recovery Gaps Analysis:**
+- Identify any new services/configs not covered by backup
+- Check for new .env files not in secrets backup
+- Verify new LaunchAgents are captured
+- Check if any new databases need backup
+
+**Status Dashboard Integration:**
+- Verify "Disaster Recovery Backup" appears in status dashboard
+- Should show green if backup <24 hours old, red otherwise
+
+### 9. Statusboard Metrics
 - Review current metrics being tracked
 - Identify gaps in monitoring coverage
 - Check alert thresholds are appropriate
 - Verify historical data is being collected
 
-### 9. Autonomy Resource Limits (Forever Autonomous)
+### 10. Autonomy Resource Limits (Forever Autonomous)
 Verify the autonomous operation safety systems are working:
 
 **Agent Limits:**
@@ -230,10 +299,16 @@ This ensures the audit improves itself over time.
 - This skill: `/Users/natedame/local-ai/ccv3/.claude/skills/system-audit/SKILL.md`
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
 - Port CLI: `/Users/natedame/local-ai/bin/port`
+- Port audit: `/Users/natedame/local-ai/bin/port-audit`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
 - Pre-commit hook: `/Users/natedame/local-ai/.git/hooks/pre-commit`
+- Backup script: `/Users/natedame/local-ai/bin/disaster-recovery-backup.sh`
+- Backup launchd: `~/Library/LaunchAgents/com.localai.disaster-recovery.plist`
+- Backup output: `~/Documents/backups/` (synced via Google Drive)
+- Backup timestamp: `~/Documents/backups/last-backup.txt`
+- Dotfiles repo: `~/dotfiles/` (if exists)
 
 ## Scheduled Usage
 
