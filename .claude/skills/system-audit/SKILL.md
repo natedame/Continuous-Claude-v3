@@ -199,7 +199,40 @@ fi
 - Check alert thresholds are appropriate
 - Verify historical data is being collected
 
-### 10. Autonomy Resource Limits (Forever Autonomous)
+### 10. Swarm Documentation Audits
+
+Swarms interpret documentation literally. Outdated or misleading docs cause confusion and wasted work.
+
+**10a. Playwright Documentation Audit:**
+```bash
+~/local-ai/bin/playwright-docs-audit scan      # Find all Playwright mentions
+~/local-ai/bin/playwright-docs-audit report    # Summary with central doc status
+~/local-ai/bin/playwright-docs-audit cleanup   # Find files needing fixes
+```
+
+Key checks:
+- CLAUDE.md links to central doc (`playwright-service/README.md`)
+- No files show `npx playwright test` without swarm container warning
+- Task docs point to Playwright Service API, not direct execution
+- PLAN.template.md has correct E2E guidance
+
+Reference: Incident `2026-02-02-playwright-confusion.md` - swarms tried running Playwright directly in containers.
+
+**10b. [Future] Host.docker.internal Audit:**
+- Verify all swarm-facing docs use `host.docker.internal` not `localhost`
+- Check for hardcoded `localhost` URLs in CLAUDE.md, task docs, READMEs
+
+**10c. [Future] Path Translation Audit:**
+- Verify docs show Mac paths for user-facing output (`~/Downloads/`)
+- Verify docs show container paths for swarm internal use (`/app/`)
+- Check for path confusion in task assignments
+
+**10d. [Future] Environment Variable Audit:**
+- Verify `$SWARM_PORT`, `$SWARM_NAME`, etc. documented correctly
+- Check for hardcoded ports that should use env vars
+- Verify worktree-specific env vars explained
+
+### 11. Autonomy Resource Limits (Forever Autonomous)
 Verify the autonomous operation safety systems are working:
 
 **Agent Limits:**
@@ -299,6 +332,7 @@ This ensures the audit improves itself over time.
 - Swarm health: `/Users/natedame/local-ai/bin/swarm-health`
 - CAO config check: `/Users/natedame/local-ai/bin/cao-config-check`
 - DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
+- Playwright docs audit: `/Users/natedame/local-ai/bin/playwright-docs-audit`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
