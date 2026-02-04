@@ -13,11 +13,23 @@ Use tasks to track all audit work. Create a task for each major area, then audit
 ## Audit Scope
 
 ### 1. Service Health & Logs
-- Check status of ALL services (statusboard shows current state)
+
+**Automated Service Health Check:**
+```bash
+~/local-ai/bin/service-health              # Full health check
+~/local-ai/bin/service-health --logs       # Include log file analysis
+~/local-ai/bin/service-health --json       # JSON output for automation
+```
+
+The service-health script checks:
+- HTTP endpoints from ports.yaml (or fallback list)
+- Docker container status and health
+- PostgreSQL database connectivity
+- Port conflicts
+
+**Manual checks (if needed):**
 - Review log files in /tmp/*.log for errors, warnings, patterns
-- Check Docker container health: `docker ps -a`
 - Verify MCP server connections (check LibreChat logs for reconnections)
-- Check database health (PostgreSQL, MongoDB, SQLite)
 
 ### 2. Past Incident Reports - WITH VALIDATION
 
@@ -43,11 +55,31 @@ For EACH incident report:
 | Missing evidence | "No FD leaks" | Re-check with different patterns |
 
 ### 3. Current Swarms
-- Check running swarms with `swarm-ls`
-- Verify swarm health metrics (memory, CPU, heap usage)
-- Check tmux responsiveness in each swarm
-- Review PLAN.md files for stuck or blocked work
-- Identify resource contention issues
+
+**Automated Swarm Health Check:**
+```bash
+~/local-ai/bin/swarm-health              # Full health check all swarms
+~/local-ai/bin/swarm-health --swarm NAME # Check specific swarm
+~/local-ai/bin/swarm-health --json       # JSON output for automation
+```
+
+The swarm-health script checks per-swarm:
+- Container status and uptime
+- SWARM_MAX_AGENTS environment variable
+- PID limits (docker inspect)
+- Memory usage (docker stats)
+- Tmux responsiveness
+- Orphan tmux windows
+- PLAN.md for BLOCKED/STUCK markers
+- Stale debug logs (>7 days)
+
+Global checks:
+- Orphaned worktrees (worktree exists but no swarm running)
+- Total Docker memory usage
+
+**Manual checks (if needed):**
+- Detailed PLAN.md review for specific blockers
+- Resource contention analysis
 
 ### 4. Configuration Audit
 - Review /Users/natedame/CLAUDE.md for accuracy and completeness
@@ -89,37 +121,29 @@ The port-audit script scans for ALL port patterns (known AND unknown), categoriz
 ### 6. CAO & Swarm Configuration
 CAO (CLI Agent Orchestrator) manages multi-agent swarms. Version mismatches cause silent failures.
 
-**Swarm Startup Prerequisites:**
+**Automated CAO Configuration Check:**
 ```bash
-# Check onboarding bypass file exists
-cat ~/.claude-swarm.json | grep -E "bypassPermissionsModeAccepted|hasCompletedOnboarding"
-
-# Verify mount in zshrc
-grep ".claude-swarm.json" ~/.zshrc
+~/local-ai/bin/cao-config-check          # Full configuration check
+~/local-ai/bin/cao-config-check --json   # JSON output for automation
 ```
 
-**CAO Version Compatibility:**
-```bash
-# Host Claude version
-claude --version
-
-# Container Claude version (in running swarm)
-docker exec <swarm> claude --version
-
-# Check CAO prompt pattern matches Claude's prompt character
-# Claude uses ❯ (U+276F), not > (U+003E)
-docker exec <swarm> grep "IDLE_PROMPT_PATTERN" /home/swarm/.local/share/uv/tools/cli-agent-orchestrator/lib/python3.11/site-packages/cli_agent_orchestrator/providers/claude_code.py
-```
+The cao-config-check script verifies:
+- ~/.claude-swarm.json bypass flags (bypassPermissionsModeAccepted, hasCompletedOnboarding)
+- Host Claude version vs container Claude version
+- CAO prompt pattern (❯ vs >)
+- Agent profiles exist (code_supervisor.md, developer.md, reviewer.md)
+- Shell integration (swarm functions in ~/.zshrc)
+- CAO installation status
 
 **If CAO times out with WAITING_USER_ANSWER:**
 1. Check if Claude shows onboarding prompt (theme selection)
 2. Check if Claude shows bypass permissions prompt
 3. Check if CAO pattern matches Claude's prompt character
 
-**Agent Profiles:**
+**Manual checks (if needed):**
 ```bash
-ls ~/.aws/cli-agent-orchestrator/agent-context/
-# Should have: code_supervisor.md, developer.md, reviewer.md
+# Check CAO prompt pattern in container
+docker exec <swarm> grep "IDLE_PROMPT_PATTERN" /home/swarm/.local/share/uv/tools/cli-agent-orchestrator/lib/python*/site-packages/cli_agent_orchestrator/providers/claude_code.py
 ```
 
 ### 7. System Resources
@@ -131,57 +155,28 @@ ls ~/.aws/cli-agent-orchestrator/agent-context/
 
 ### 8. Disaster Recovery
 
-**Backup System Health:**
+**Automated Disaster Recovery Check:**
 ```bash
-# Check last backup timestamp (should be <24 hours)
-cat ~/Documents/backups/last-backup.txt
+~/local-ai/bin/disaster-recovery-check       # Full backup health check
+~/local-ai/bin/disaster-recovery-check --json # JSON output for automation
+```
 
-# Verify backup launchd is loaded
-launchctl list | grep disaster-recovery
+The disaster-recovery-check script verifies:
+- Backup age (should be <24 hours)
+- LaunchD service loaded (com.localai.disaster-recovery)
+- All expected directories exist (secrets/, launchagents/, db/, dotfiles-snapshot/)
+- Brewfile exists
+- Database dumps are recent and non-empty (cnm, cc, letta, mongo)
+- All repos have git remotes
+- Uncommitted work in key repos (warning)
+- Google Drive folders exist (Documents, Desktop, projects)
+- Secrets are captured (librechat.env, cnm.env, cao-launcher.env)
 
-# Check backup script exists and is executable
-ls -la ~/local-ai/bin/disaster-recovery-backup.sh
-
+**Manual checks (if needed):**
+```bash
 # Review recent backup log
 tail -30 ~/Documents/backups/backup.log
-```
 
-**Backup Contents Verification:**
-```bash
-# Check all expected backup subdirectories exist
-ls -la ~/Documents/backups/
-# Expected: secrets/, launchagents/, db/, dotfiles-snapshot/, Brewfile, last-backup.txt
-
-# Verify database dumps are recent and non-empty
-ls -lh ~/Documents/backups/db/
-
-# Check secrets are captured
-ls ~/Documents/backups/secrets/
-```
-
-**Git Repository Coverage:**
-```bash
-# Check all repos have remotes (no local-only repos)
-find ~/local-ai -maxdepth 2 -name ".git" -type d | while read git; do
-  dir=$(dirname "$git")
-  cd "$dir"
-  remote=$(git remote -v 2>/dev/null | head -1)
-  if [ -z "$remote" ]; then echo "NO REMOTE: $dir"; fi
-done
-
-# Check for uncommitted work in key repos
-cd ~/local-ai && git status --porcelain | wc -l
-cd ~/local-ai/ccv3 && git status --porcelain | wc -l
-```
-
-**Google Drive Sync Verification:**
-```bash
-# Verify these folders exist (synced by Google Drive)
-ls -d ~/Documents ~/Desktop ~/projects ~/archives ~/cao-launcher 2>/dev/null
-```
-
-**Dotfiles Repo (if exists):**
-```bash
 # Check dotfiles repo is current
 if [ -d ~/dotfiles/.git ]; then
   cd ~/dotfiles && git status && git log -1 --format="%H %s"
@@ -300,6 +295,10 @@ This ensures the audit improves itself over time.
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
 - Port CLI: `/Users/natedame/local-ai/bin/port`
 - Port audit: `/Users/natedame/local-ai/bin/port-audit`
+- Service health: `/Users/natedame/local-ai/bin/service-health`
+- Swarm health: `/Users/natedame/local-ai/bin/swarm-health`
+- CAO config check: `/Users/natedame/local-ai/bin/cao-config-check`
+- DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
