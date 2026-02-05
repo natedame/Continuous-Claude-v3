@@ -428,6 +428,22 @@ done
 
 **Reference:** Incidents `2026-02-05_deploy-not-pulling-origin-main.md`, `2026-02-05_langgraph-server-worktree-changes-not-deployed.md`
 
+**11i. Git Backup Branch Audit:**
+```bash
+~/local-ai/bin/git-backup-audit              # Check for backup branches
+~/local-ai/bin/git-backup-audit --json       # JSON output for automation
+```
+
+Deploy-service creates `backup/*` branches when local has unpushed commits (preserves host Claude's work while allowing swarm deploys to proceed). These branches need to be rebased/pushed and deleted, or they'll be forgotten.
+
+The script checks:
+- `~/local-ai` for `backup/*` branches
+- `~/projects/PRO-site` for `backup/*` branches
+- Reports commits ahead of main, last commit date/subject
+- Provides recovery instructions
+
+**Reference:** Incident `2026-02-05_deploy-auto-push-for-swarm-autonomy.md`
+
 ### 12. Autonomy Resource Limits (Forever Autonomous)
 
 Verify the autonomous operation safety systems are working:
@@ -537,6 +553,7 @@ This ensures the audit improves itself over time.
 - Env var audit: `/Users/natedame/local-ai/bin/env-var-audit`
 - Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
 - Deploy health check: `/Users/natedame/local-ai/bin/deploy-health-check`
+- Git backup audit: `/Users/natedame/local-ai/bin/git-backup-audit`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
