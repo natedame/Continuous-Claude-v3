@@ -517,7 +517,6 @@ This ensures the audit improves itself over time.
 - Env var audit: `/Users/natedame/local-ai/bin/env-var-audit`
 - Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
 - Deploy health check: `/Users/natedame/local-ai/bin/deploy-health-check`
-- Deploy incident reports: `~/swarm-admin/docs/incident-reports/2026-02-05_deploy-*.md`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
