@@ -8,7 +8,25 @@ allowed-tools: [Read, Grep, Glob, Task, Bash, AskUserQuestion, WebSearch]
 
 ## Instructions
 
-Use tasks to track all audit work. Create a task for each major area, then audit systematically.
+**REQUIRED: Create tasks for EVERY audit section.** Do not cherry-pick - the audit must be comprehensive.
+
+On startup, create these tasks (use TaskCreate):
+1. Service Health & Logs (Section 1)
+2. Incident Reports Validation (Section 2)
+3. Current Swarms (Section 3)
+4. Configuration Audit (Section 4)
+5. Port Management (Section 5)
+6. CAO & Swarm Configuration (Section 6)
+7. System Resources (Section 7)
+8. Disaster Recovery (Section 8)
+9. Monitoring Gap Analysis (Section 9)
+10. Swarm Documentation Audits (Section 10)
+11. Deploy Infrastructure (Section 11)
+12. Autonomy Resource Limits (Section 12)
+13. Meta-Audit (Self-Improvement)
+14. Log Audit Completion
+
+Work through tasks in order, marking each complete before moving to the next.
 
 ## Audit Scope
 
@@ -563,6 +581,21 @@ This ensures the audit improves itself over time.
 - Backup output: `~/Documents/backups/` (synced via Google Drive)
 - Backup timestamp: `~/Documents/backups/last-backup.txt`
 - Dotfiles repo: `~/dotfiles/` (if exists)
+- System audit log: `/Users/natedame/local-ai/bin/system-audit-log`
+- System audit check: `/Users/natedame/local-ai/bin/system-audit-check`
+- Audit timestamp: `~/Documents/backups/last-system-audit.txt`
+
+## Audit Completion Logging
+
+**REQUIRED:** At the end of every audit, log completion for status dashboard tracking:
+
+```bash
+~/local-ai/bin/system-audit-log --summary "X issues found, Y critical"
+```
+
+This updates the timestamp checked by status dashboard. If audit goes >24 hours stale, dashboard shows warning.
+
+---
 
 ## Scheduled Usage
 
