@@ -193,11 +193,38 @@ fi
 - Verify "Disaster Recovery Backup" appears in status dashboard
 - Should show green if backup <24 hours old, red otherwise
 
-### 9. Statusboard Metrics
-- Review current metrics being tracked
-- Identify gaps in monitoring coverage
-- Check alert thresholds are appropriate
-- Verify historical data is being collected
+### 9. Monitoring Gap Analysis
+
+Use incident history to identify missing metrics and logging.
+
+**For each recent incident report, ask:**
+1. **How was it detected?**
+   - User report? (bad - should be automated)
+   - Accident/luck? (bad - need proactive detection)
+   - Automated alert? (good - system working)
+
+2. **What metric would have caught it earlier?**
+   - What was the first observable symptom?
+   - Could we measure that automatically?
+
+3. **Does that metric exist today?**
+   - Check status dashboard
+   - Check service logs
+   - Check alerting rules
+
+4. **If not, add it to recommendations.**
+
+**Common gaps to check:**
+
+| Incident Pattern | Metric Needed |
+|------------------|---------------|
+| Swarm stuck/frozen | Heartbeat/activity metric |
+| Service silently died | Health endpoint monitoring |
+| Disk filled up | Disk usage alerts |
+| Memory leak over time | Memory trend tracking |
+| Config drift | Config hash comparison |
+
+**Output:** List of recommended new metrics based on incident analysis.
 
 ### 10. Swarm Documentation Audits
 
@@ -217,8 +244,7 @@ Key checks:
 - No files show `npx playwright test` without swarm container warning
 - Task docs point to Playwright Service API, not direct execution
 
-**10a-ii. PLAN.template.md Audit:**
-Verify `~/local-ai/PLAN.template.md` stays correct:
+**PLAN.template.md:** Also verify `~/local-ai/PLAN.template.md` stays correct:
 - E2E test guidance points to Playwright Service
 - No outdated path references
 - Template copied correctly to new swarms
