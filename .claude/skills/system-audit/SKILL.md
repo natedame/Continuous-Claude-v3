@@ -203,7 +203,7 @@ fi
 
 Swarms interpret documentation literally. Outdated or misleading docs cause confusion and wasted work.
 
-**Reference:** `/app/swarm-documentation-principles.md` (source of truth for swarm docs)
+**Reference:** `~/swarm-admin/docs/swarm-documentation-principles.md` (source of truth for swarm docs)
 
 **10a. Playwright Documentation Audit:**
 ```bash
@@ -349,7 +349,7 @@ This ensures the audit improves itself over time.
 - Health audit: `/Users/natedame/local-ai/SWARM_HEALTH_AUDIT_REPORT.md`
 - Baselines: `/Users/natedame/local-ai/SWARM_INFRASTRUCTURE_BASELINES.md`
 - Host instructions: `/Users/natedame/CLAUDE.md`
-- Swarm documentation principles: `/Users/natedame/local-ai/swarm-documentation-principles.md`
+- Swarm documentation principles: `~/swarm-admin/docs/swarm-documentation-principles.md`
 - Autonomy E2E tests: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
 - This skill: `/Users/natedame/local-ai/ccv3/.claude/skills/system-audit/SKILL.md`
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
