@@ -171,6 +171,29 @@ docker exec <swarm> grep "IDLE_PROMPT_PATTERN" /home/swarm/.local/share/uv/tools
 - Monitor network connections and port usage
 - Check for orphaned containers or volumes
 
+**NPM Security Audit:**
+```bash
+# Check key projects for vulnerabilities
+for proj in ~/local-ai/services/status-dashboard ~/local-ai/content-need-manager ~/local-ai/langgraph-server; do
+  if [ -f "$proj/package.json" ]; then
+    echo "=== $(basename $proj) ===" && cd "$proj" && npm audit --audit-level=high 2>/dev/null | head -20
+  fi
+done
+```
+
+Flag HIGH or CRITICAL vulnerabilities for immediate action.
+
+**Docker Image Freshness:**
+```bash
+# Check base image ages (images older than 90 days may have security issues)
+docker images --format "{{.Repository}}:{{.Tag}} - {{.CreatedSince}}" | grep -E "months|year"
+
+# Check specific base images
+docker inspect --format='{{.Created}}' node:20-alpine 2>/dev/null || echo "Image not pulled"
+```
+
+Flag images older than 90 days for update consideration.
+
 ### 8. Disaster Recovery
 
 **Automated Disaster Recovery Check:**
@@ -193,7 +216,7 @@ The disaster-recovery-check script verifies:
 **Manual checks (if needed):**
 ```bash
 # Review recent backup log
-tail -30 ~/Documents/backups/backup.log
+tail -30 ~/backups/backup.log
 
 # Check dotfiles repo is current
 if [ -d ~/dotfiles/.git ]; then
@@ -578,12 +601,12 @@ This ensures the audit improves itself over time.
 - Pre-commit hook: `/Users/natedame/local-ai/.git/hooks/pre-commit`
 - Backup script: `/Users/natedame/local-ai/bin/disaster-recovery-backup.sh`
 - Backup launchd: `~/Library/LaunchAgents/com.localai.disaster-recovery.plist`
-- Backup output: `~/Documents/backups/` (synced via Google Drive)
-- Backup timestamp: `~/Documents/backups/last-backup.txt`
+- Backup output: `~/backups/` (add to Google Drive manually)
+- Backup timestamp: `~/backups/last-backup.txt`
 - Dotfiles repo: `~/dotfiles/` (if exists)
 - System audit log: `/Users/natedame/local-ai/bin/system-audit-log`
 - System audit check: `/Users/natedame/local-ai/bin/system-audit-check`
-- Audit timestamp: `~/Documents/backups/last-system-audit.txt`
+- Audit timestamp: `~/backups/last-system-audit.txt`
 
 ## Audit Completion Logging
 
