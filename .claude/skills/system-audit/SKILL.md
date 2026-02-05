@@ -33,7 +33,7 @@ The service-health script checks:
 
 ### 2. Past Incident Reports - WITH VALIDATION
 
-Review `/Users/natedame/local-ai/incident-reports/` and `/Users/natedame/local-ai/_incident-notes/`
+Review `~/swarm-admin/docs/incident-reports/` and `~/swarm-admin/docs/incident-reports/notes/`
 
 **CRITICAL: Validate each diagnosis, don't just accept it.**
 
@@ -203,6 +203,8 @@ fi
 
 Swarms interpret documentation literally. Outdated or misleading docs cause confusion and wasted work.
 
+**Reference:** `/app/swarm-documentation-principles.md` (source of truth for swarm docs)
+
 **10a. Playwright Documentation Audit:**
 ```bash
 ~/local-ai/bin/playwright-docs-audit scan      # Find all Playwright mentions
@@ -214,7 +216,12 @@ Key checks:
 - CLAUDE.md links to central doc (`playwright-service/README.md`)
 - No files show `npx playwright test` without swarm container warning
 - Task docs point to Playwright Service API, not direct execution
-- PLAN.template.md has correct E2E guidance
+
+**10a-ii. PLAN.template.md Audit:**
+Verify `~/local-ai/PLAN.template.md` stays correct:
+- E2E test guidance points to Playwright Service
+- No outdated path references
+- Template copied correctly to new swarms
 
 **Guardrail (swarms don't know about this):**
 - Hook: `~/.claude-swarm/hooks/dist/playwright-guard.mjs`
@@ -236,6 +243,23 @@ Reference: Incident `2026-02-02-playwright-confusion.md` - swarms tried running 
 - Verify `$SWARM_PORT`, `$SWARM_NAME`, etc. documented correctly
 - Check for hardcoded ports that should use env vars
 - Verify worktree-specific env vars explained
+
+**10e. [Future] Root Directory Hygiene Audit:**
+Check `~/local-ai/` root for files/folders that shouldn't be there:
+- Swarm-specific plans/reports (should be in `thoughts/` or archived)
+- Temp files (`nohup.out`, `*.log`)
+- Session-specific files (`SESSION_*.md`, `MISSION.md` copies)
+- One-off research folders from individual swarms
+- Protected infrastructure accidentally committed (should be outside local-ai)
+
+Patterns to flag:
+```bash
+# Files that don't belong in root
+ls ~/local-ai/*.md | grep -vE "(CLAUDE|README|PLAN|DEV-WORKFLOW|swarm-documentation-principles)"
+
+# Folders that might be swarm artifacts
+ls -d ~/local-ai/*/ | grep -vE "(bin|ccv3|content-|dataforseo|google-workspace|incident|interactive|langgraph|librechat|logs|my-sheet|node_modules|one-time|packages|personal|playwright|process|scripts|services|tests|thoughts|ux-testing|voice|worktrees|_)"
+```
 
 ### 11. Autonomy Resource Limits (Forever Autonomous)
 Verify the autonomous operation safety systems are working:
@@ -273,7 +297,7 @@ find ~/.claude-swarm-*/debug -name "*.txt" -mtime +7 -print | head -5
 docker exec cao-swarm-<name> tmux list-windows -t cao -F "#{window_name}"
 ```
 
-Reference: `/Users/natedame/local-ai/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
+Reference: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
 
 ## Execution Process
 
@@ -323,12 +347,12 @@ This ensures the audit improves itself over time.
 
 ## Files Referenced
 
-- Incident reports: `/Users/natedame/local-ai/incident-reports/*.md`
-- Investigation notes: `/Users/natedame/local-ai/_incident-notes/`
+- Incident reports: `~/swarm-admin/docs/incident-reports/*.md`
+- Investigation notes: `~/swarm-admin/docs/incident-reports/notes/`
 - Health audit: `/Users/natedame/local-ai/SWARM_HEALTH_AUDIT_REPORT.md`
 - Baselines: `/Users/natedame/local-ai/SWARM_INFRASTRUCTURE_BASELINES.md`
 - Host instructions: `/Users/natedame/CLAUDE.md`
-- Autonomy E2E tests: `/Users/natedame/local-ai/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
+- Autonomy E2E tests: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
 - This skill: `/Users/natedame/local-ai/ccv3/.claude/skills/system-audit/SKILL.md`
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
 - Port CLI: `/Users/natedame/local-ai/bin/port`
