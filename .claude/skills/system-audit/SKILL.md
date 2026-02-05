@@ -230,36 +230,33 @@ Verify `~/local-ai/PLAN.template.md` stays correct:
 
 Reference: Incident `2026-02-02-playwright-confusion.md` - swarms tried running Playwright directly in containers.
 
-**10b. [Future] Host.docker.internal Audit:**
+**10b. Root Directory Hygiene Audit:**
+```bash
+~/local-ai/bin/swarm-leakage-audit              # Full audit
+~/local-ai/bin/swarm-leakage-audit json         # JSON output for automation
+```
+
+Detects swarm files that leaked into main local-ai:
+- Work products: `PLAN.md`, `MISSION.md`, `SESSION_*.md`, `TASK*.md`
+- Duplicate docs (files also in swarm-admin/docs)
+- Temp files: `nohup.out`, `*.log` in root
+- Planning artifacts: `IMPLEMENTATION_*.md`, `RESEARCH_*.md`, etc.
+- Orphaned directories not in known-good list
+- Files with swarm-specific markers (`$SWARM_NAME`, `/app/worktrees/`)
+
+**10c. [Future] Host.docker.internal Audit:**
 - Verify all swarm-facing docs use `host.docker.internal` not `localhost`
 - Check for hardcoded `localhost` URLs in CLAUDE.md, task docs, READMEs
 
-**10c. [Future] Path Translation Audit:**
+**10d. [Future] Path Translation Audit:**
 - Verify docs show Mac paths for user-facing output (`~/Downloads/`)
 - Verify docs show container paths for swarm internal use (`/app/`)
 - Check for path confusion in task assignments
 
-**10d. [Future] Environment Variable Audit:**
+**10e. [Future] Environment Variable Audit:**
 - Verify `$SWARM_PORT`, `$SWARM_NAME`, etc. documented correctly
 - Check for hardcoded ports that should use env vars
 - Verify worktree-specific env vars explained
-
-**10e. [Future] Root Directory Hygiene Audit:**
-Check `~/local-ai/` root for files/folders that shouldn't be there:
-- Swarm-specific plans/reports (should be in `thoughts/` or archived)
-- Temp files (`nohup.out`, `*.log`)
-- Session-specific files (`SESSION_*.md`, `MISSION.md` copies)
-- One-off research folders from individual swarms
-- Protected infrastructure accidentally committed (should be outside local-ai)
-
-Patterns to flag:
-```bash
-# Files that don't belong in root
-ls ~/local-ai/*.md | grep -vE "(CLAUDE|README|PLAN|DEV-WORKFLOW|swarm-documentation-principles)"
-
-# Folders that might be swarm artifacts
-ls -d ~/local-ai/*/ | grep -vE "(bin|ccv3|content-|dataforseo|google-workspace|incident|interactive|langgraph|librechat|logs|my-sheet|node_modules|one-time|packages|personal|playwright|process|scripts|services|tests|thoughts|ux-testing|voice|worktrees|_)"
-```
 
 ### 11. Autonomy Resource Limits (Forever Autonomous)
 Verify the autonomous operation safety systems are working:
@@ -352,6 +349,7 @@ This ensures the audit improves itself over time.
 - Health audit: `/Users/natedame/local-ai/SWARM_HEALTH_AUDIT_REPORT.md`
 - Baselines: `/Users/natedame/local-ai/SWARM_INFRASTRUCTURE_BASELINES.md`
 - Host instructions: `/Users/natedame/CLAUDE.md`
+- Swarm documentation principles: `/Users/natedame/local-ai/swarm-documentation-principles.md`
 - Autonomy E2E tests: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
 - This skill: `/Users/natedame/local-ai/ccv3/.claude/skills/system-audit/SKILL.md`
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
@@ -362,6 +360,7 @@ This ensures the audit improves itself over time.
 - CAO config check: `/Users/natedame/local-ai/bin/cao-config-check`
 - DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
 - Playwright docs audit: `/Users/natedame/local-ai/bin/playwright-docs-audit`
+- Swarm leakage audit: `/Users/natedame/local-ai/bin/swarm-leakage-audit`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
