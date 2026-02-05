@@ -244,19 +244,58 @@ Detects swarm files that leaked into main local-ai:
 - Orphaned directories not in known-good list
 - Files with swarm-specific markers (`$SWARM_NAME`, `/app/worktrees/`)
 
-**10c. [Future] Host.docker.internal Audit:**
-- Verify all swarm-facing docs use `host.docker.internal` not `localhost`
-- Check for hardcoded `localhost` URLs in CLAUDE.md, task docs, READMEs
+**10c. Networking Audit:**
+```bash
+~/local-ai/bin/networking-audit              # Full audit
+~/local-ai/bin/networking-audit json         # JSON output
+```
 
-**10d. [Future] Path Translation Audit:**
-- Verify docs show Mac paths for user-facing output (`~/Downloads/`)
-- Verify docs show container paths for swarm internal use (`/app/`)
-- Check for path confusion in task assignments
+Verifies swarm-facing docs use `host.docker.internal` not `localhost`:
+- Checks CLAUDE.md files for hardcoded localhost:PORT
+- Verifies Mac service ports use host.docker.internal
+- Skips common dev ports (3000, 8080, 5173)
 
-**10e. [Future] Environment Variable Audit:**
-- Verify `$SWARM_PORT`, `$SWARM_NAME`, etc. documented correctly
-- Check for hardcoded ports that should use env vars
-- Verify worktree-specific env vars explained
+**10d. Path Translation Audit:**
+```bash
+~/local-ai/bin/path-audit              # Full audit
+~/local-ai/bin/path-audit json         # JSON output
+```
+
+Detects path confusion in swarm documentation:
+- Flags deprecated `/app/worktrees/` pattern (old architecture)
+- Flags Mac paths (`/Users/...`) in swarm-facing docs
+- Verifies `/app/` and `/downloads/` mappings documented
+
+**10e. Environment Variable Audit:**
+```bash
+~/local-ai/bin/env-var-audit              # Full audit
+~/local-ai/bin/env-var-audit json         # JSON output
+```
+
+Checks for hardcoded values that should use env vars:
+- Flags hardcoded port 3000 (should be `$SWARM_PORT`)
+- Flags hardcoded worktree names (should be `$SWARM_NAME`)
+- Verifies env var documentation in CLAUDE.md
+
+**10f. Worktree Cleanup Audit:**
+```bash
+~/local-ai/bin/worktree-audit              # Full audit
+~/local-ai/bin/worktree-audit json         # JSON output
+```
+
+Cross-references worktrees with status dashboard tickets:
+- Flags worktrees with NO associated ticket (orphans)
+- Flags worktrees where ticket is closed/done
+- Keeps worktrees where ticket is open/started/todo
+- Shows active swarm containers
+
+To clean up flagged worktrees:
+```bash
+# Push branch to GitHub first (preserves history)
+cd ~/local-ai && git push origin feature/<worktree-name>
+# Then remove worktree
+swarm-cleanup <worktree-name>
+```
 
 ### 11. Autonomy Resource Limits (Forever Autonomous)
 Verify the autonomous operation safety systems are working:
@@ -361,6 +400,10 @@ This ensures the audit improves itself over time.
 - DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
 - Playwright docs audit: `/Users/natedame/local-ai/bin/playwright-docs-audit`
 - Swarm leakage audit: `/Users/natedame/local-ai/bin/swarm-leakage-audit`
+- Networking audit: `/Users/natedame/local-ai/bin/networking-audit`
+- Path audit: `/Users/natedame/local-ai/bin/path-audit`
+- Env var audit: `/Users/natedame/local-ai/bin/env-var-audit`
+- Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
