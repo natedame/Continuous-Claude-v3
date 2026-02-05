@@ -373,7 +373,27 @@ lsof -ti:2024 | wc -l
 # Expected: 1-2 (server + possibly tsx watch)
 ```
 
-**11e. Worktree Git Health:**
+**11e. LaunchAgent vs nohup Conflicts:**
+```bash
+# Check for services with LaunchAgents that deploy-service starts with nohup
+# This causes competing processes (LaunchAgent restarts what nohup killed)
+for plist in ~/Library/LaunchAgents/com.local-ai.*.plist; do
+    name=$(basename "$plist" .plist | sed 's/com.local-ai.//')
+    keepalive=$(grep -A1 "KeepAlive" "$plist" 2>/dev/null | grep -q "true" && echo "YES" || echo "no")
+    loaded=$(launchctl list 2>/dev/null | grep "com.local-ai.$name" > /dev/null && echo "LOADED" || echo "not loaded")
+    if [[ "$keepalive" == "YES" && "$loaded" == "LOADED" ]]; then
+        # Check if deploy-service uses nohup for this service
+        if grep -q "nohup.*$name\|$name.*nohup\|$name)" ~/local-ai/bin/deploy-service 2>/dev/null; then
+            echo "⚠️ CONFLICT: $name has LaunchAgent+KeepAlive but deploy-service uses nohup"
+        fi
+    fi
+done
+```
+Services with conflicts should use `launchctl kickstart -k` instead of nohup.
+
+**Reference:** Incident `2026-02-05_langgraph-server-worktree-changes-not-deployed.md` → Architecture Simplification
+
+**11f. Worktree Git Health:**
 ```bash
 # Check for broken Docker-path worktrees
 for wt in ~/local-ai/worktrees/*/; do
@@ -386,7 +406,7 @@ for wt in ~/local-ai/worktrees/*/; do
 done
 ```
 
-**11f. Deploy Trigger Running:**
+**11g. Deploy Trigger Running:**
 ```bash
 # Should be running
 pgrep -f "deploy-trigger" && echo "✓ Running" || echo "✗ Not running"
@@ -396,7 +416,7 @@ curl -s http://localhost:3099/health | jq -r '.status'
 # Expected: ok
 ```
 
-**11g. Unpushed Commits Check:**
+**11h. Unpushed Commits Check:**
 ```bash
 # Check key repos for unpushed commits that would be lost on deploy
 for repo in ~/local-ai ~/local-ai/langgraph-server ~/local-ai/content-need-manager; do
