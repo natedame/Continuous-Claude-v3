@@ -67,7 +67,12 @@ curl -s $TEST_URL > /dev/null && echo "Server ready"
 
 ## Step 4: Run E2E Tests
 
-### Playwright
+> ⚠️ **SWARM CONTAINERS:** If running in a Docker swarm container (local-ai ecosystem),
+> you CANNOT run `npx playwright test` directly - no browsers installed.
+> Use the Playwright Service API instead: `http://host.docker.internal:3020/api/test/run`
+> See: `/app/playwright-service/README.md`
+
+### Playwright (Mac/CI only - NOT in containers)
 ```bash
 # Run all E2E tests
 npx playwright test
