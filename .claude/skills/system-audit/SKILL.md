@@ -323,7 +323,93 @@ cd ~/local-ai && git push origin feature/<worktree-name>
 swarm-cleanup <worktree-name>
 ```
 
-### 11. Autonomy Resource Limits (Forever Autonomous)
+### 11. Deploy Infrastructure Audit
+
+Deploy issues silently break swarm autonomy. These tests catch regressions from incidents on 2026-02-05.
+
+**Automated Deploy Health Check:**
+```bash
+~/local-ai/bin/deploy-health-check              # Full check
+~/local-ai/bin/deploy-health-check --json       # JSON output
+```
+
+**If script doesn't exist, run these manual checks:**
+
+**11a. Git Sync Verification:**
+```bash
+# Verify deploy-service syncs with origin
+cd ~/local-ai/content-need-manager
+git fetch origin main
+LOCAL=$(git rev-parse HEAD)
+ORIGIN=$(git rev-parse origin/main)
+[ "$LOCAL" = "$ORIGIN" ] && echo "✓ In sync" || echo "✗ Local differs from origin"
+```
+
+**11b. LangGraph LaunchAgents:**
+```bash
+# All three should be loaded (exit code 0)
+launchctl list | grep -E "langgraph.server|cloudflare.langgraph-tunnel"
+# Expected: com.langgraph.server, com.cloudflare.langgraph-tunnel
+# NOT expected: com.langgraph.cors-proxy (removed 2026-02-05)
+```
+
+**11c. Stable Tunnel Health:**
+```bash
+# Tunnel should respond
+curl -s --max-time 5 https://langgraph.syllabus.io/ok
+# Expected: {"ok":true}
+
+# If 503: cloudflared config missing
+cat ~/.cloudflared/config.yml | grep -q "localhost:2024" && echo "✓ Config OK" || echo "✗ Config missing/wrong"
+```
+
+**11d. No Competing Processes:**
+```bash
+# Should find ZERO nohup langgraph processes
+pgrep -f "nohup.*langgraph" && echo "✗ Competing nohup process" || echo "✓ No competing processes"
+
+# Only ONE process should own port 2024
+lsof -ti:2024 | wc -l
+# Expected: 1-2 (server + possibly tsx watch)
+```
+
+**11e. Worktree Git Health:**
+```bash
+# Check for broken Docker-path worktrees
+for wt in ~/local-ai/worktrees/*/; do
+  if [ -f "$wt/.git" ]; then
+    gitdir=$(cat "$wt/.git" | grep gitdir | cut -d' ' -f2)
+    if [[ "$gitdir" == /app/* ]]; then
+      echo "✗ BROKEN: $wt has Docker path: $gitdir"
+    fi
+  fi
+done
+```
+
+**11f. Deploy Trigger Running:**
+```bash
+# Should be running
+pgrep -f "deploy-trigger" && echo "✓ Running" || echo "✗ Not running"
+
+# Health endpoint
+curl -s http://localhost:3099/health | jq -r '.status'
+# Expected: ok
+```
+
+**11g. Unpushed Commits Check:**
+```bash
+# Check key repos for unpushed commits that would be lost on deploy
+for repo in ~/local-ai ~/local-ai/langgraph-server ~/local-ai/content-need-manager; do
+  cd "$repo"
+  unpushed=$(git rev-list origin/main..HEAD --count 2>/dev/null)
+  [ "$unpushed" -gt 0 ] && echo "⚠️ $repo has $unpushed unpushed commits"
+done
+```
+
+**Reference:** Incidents `2026-02-05_deploy-not-pulling-origin-main.md`, `2026-02-05_langgraph-server-worktree-changes-not-deployed.md`
+
+### 12. Autonomy Resource Limits (Forever Autonomous)
+
 Verify the autonomous operation safety systems are working:
 
 **Agent Limits:**
@@ -430,6 +516,8 @@ This ensures the audit improves itself over time.
 - Path audit: `/Users/natedame/local-ai/bin/path-audit`
 - Env var audit: `/Users/natedame/local-ai/bin/env-var-audit`
 - Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
+- Deploy health check: `/Users/natedame/local-ai/bin/deploy-health-check`
+- Deploy incident reports: `~/swarm-admin/docs/incident-reports/2026-02-05_deploy-*.md`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
