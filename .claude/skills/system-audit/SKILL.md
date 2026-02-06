@@ -17,6 +17,7 @@ On startup, create these tasks (use TaskCreate):
 4. Configuration Audit (Section 4)
 5. Port Management (Section 5)
 6. CAO & Swarm Configuration (Section 6)
+6b. Agent Teams Configuration (Section 6b)
 7. System Resources (Section 7)
 8. Disaster Recovery (Section 8)
 9. Monitoring Gap Analysis (Section 9)
@@ -179,12 +180,12 @@ Agent Teams swarms use Claude's native multi-agent mode instead of CAO. They hav
 
 **Identify team swarms:**
 ```bash
-# Team swarms have start-team alias, CAO swarms have start-swarm
+# Team swarms run `claude` directly (no CAO python process)
 for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
-  if docker exec "$c" bash -c 'alias' 2>/dev/null | grep -q start-team; then
-    echo "TEAM: $c"
-  else
+  if docker exec "$c" pgrep -f "cli-agent-orchestrator" >/dev/null 2>&1; then
     echo "CAO:  $c"
+  else
+    echo "TEAM: $c"
   fi
 done
 ```
