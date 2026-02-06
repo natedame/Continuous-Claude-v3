@@ -51,7 +51,7 @@ The service-health script checks:
 
 ### 2. Past Incident Reports - WITH VALIDATION
 
-Review `~/swarm-admin/docs/incident-reports/` and `~/swarm-admin/docs/incident-reports/notes/`
+Review `~/swarm-admin/incidents/` and `~/swarm-admin/incidents/notes/`
 
 **CRITICAL: Validate each diagnosis, don't just accept it.**
 
@@ -173,6 +173,67 @@ The cao-config-check script verifies:
 # Check CAO prompt pattern in container
 docker exec <swarm> grep "IDLE_PROMPT_PATTERN" /home/swarm/.local/share/uv/tools/cli-agent-orchestrator/lib/python*/site-packages/cli_agent_orchestrator/providers/claude_code.py
 ```
+
+### 6b. Agent Teams Configuration
+Agent Teams swarms use Claude's native multi-agent mode instead of CAO. They have different configuration requirements. CAO checks (Section 6 above) do NOT apply to team swarms.
+
+**Identify team swarms:**
+```bash
+# Team swarms have start-team alias, CAO swarms have start-swarm
+for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
+  if docker exec "$c" bash -c 'alias' 2>/dev/null | grep -q start-team; then
+    echo "TEAM: $c"
+  else
+    echo "CAO:  $c"
+  fi
+done
+```
+
+**For each team swarm, verify:**
+
+**6b-1. Permissions bypass (settings.json):**
+```bash
+# Must have permissions.defaultMode — the old bypassPermissions:true alone is insufficient
+docker exec <team-swarm> python3 -c "
+import json
+s = json.load(open('/home/swarm/.claude/settings.json'))
+mode = s.get('permissions',{}).get('defaultMode')
+print('✓' if mode == 'bypassPermissions' else '✗', 'permissions.defaultMode:', mode)
+"
+```
+
+**6b-2. Wrapper binary integrity:**
+```bash
+# The claude binary should be a wrapper that injects --dangerously-skip-permissions
+# npm updates in entrypoint can overwrite this — entrypoint should restore it
+docker exec <team-swarm> head -3 $(docker exec <team-swarm> which claude)
+# Expected: #!/bin/bash + exec ...claude-original --dangerously-skip-permissions "$@"
+```
+
+**6b-3. Team mode settings:**
+```bash
+docker exec <team-swarm> python3 -c "
+import json
+s = json.load(open('/home/swarm/.claude/settings.json'))
+tm = s.get('teammateMode')
+exp = s.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')
+print('✓' if tm == 'tmux' else '✗', 'teammateMode:', tm)
+print('✓' if exp == '1' else '✗', 'AGENT_TEAMS env:', exp)
+"
+```
+
+**6b-4. Host template integrity:**
+```bash
+# The host template must have correct format — all new swarms copy from this
+python3 -c "
+import json
+s = json.load(open('$HOME/.claude-swarm/settings.json'))
+mode = s.get('permissions',{}).get('defaultMode')
+print('✓' if mode == 'bypassPermissions' else '✗', 'Host template permissions.defaultMode:', mode)
+"
+```
+
+**Reference:** Incident `2026-02-06-team-swarm-permissions-bypass-broken.md` — npm update overwrote wrapper, settings had wrong format, team swarms prompted for permissions.
 
 ### 7. System Resources
 - Check host system memory, CPU, disk usage
@@ -532,7 +593,7 @@ find ~/.claude-swarm-*/debug -name "*.txt" -mtime +7 -print | head -5
 docker exec cao-swarm-<name> tmux list-windows -t cao -F "#{window_name}"
 ```
 
-Reference: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
+Reference: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
 
 ## Execution Process
 
@@ -582,13 +643,13 @@ This ensures the audit improves itself over time.
 
 ## Files Referenced
 
-- Incident reports: `~/swarm-admin/docs/incident-reports/*.md`
-- Investigation notes: `~/swarm-admin/docs/incident-reports/notes/`
+- Incident reports: `~/swarm-admin/incidents/*.md`
+- Investigation notes: `~/swarm-admin/incidents/notes/`
 - Health audit: `/Users/natedame/local-ai/SWARM_HEALTH_AUDIT_REPORT.md`
 - Baselines: `/Users/natedame/local-ai/SWARM_INFRASTRUCTURE_BASELINES.md`
 - Host instructions: `/Users/natedame/CLAUDE.md`
 - Swarm documentation principles: `~/swarm-admin/docs/swarm-documentation-principles.md`
-- Autonomy E2E tests: `~/swarm-admin/docs/incident-reports/2026-02-02_autonomy-forever-e2e-tests.md`
+- Autonomy E2E tests: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
 - This skill: `/Users/natedame/local-ai/ccv3/.claude/skills/system-audit/SKILL.md`
 - Port registry: `/Users/natedame/local-ai/ports.yaml`
 - Port CLI: `/Users/natedame/local-ai/bin/port`
