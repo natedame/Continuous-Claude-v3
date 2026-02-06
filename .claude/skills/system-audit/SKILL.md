@@ -72,6 +72,16 @@ For EACH incident report:
 | Unverified fix claims | "Fixed in 3.6a" | Check changelog |
 | Missing evidence | "No FD leaks" | Re-check with different patterns |
 
+**2b. Stray Incident File Cleanup:**
+
+Host incident reports belong ONLY in `~/swarm-admin/incidents/`. Scan for any `incidents/` directories that aren't the canonical one (ignore worktrees - those are swarm territory):
+
+```bash
+find ~ -maxdepth 4 -type d -name "incidents" ! -path "*/swarm-admin/*" ! -path "*/worktrees/*" ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null
+```
+
+For any found: check for `.md` files (excluding README.md). Move unique host incident reports to `~/swarm-admin/incidents/`, then ensure the stray folder has a redirect README.md pointing to the correct location.
+
 ### 3. Current Swarms
 
 **Automated Swarm Health Check:**
