@@ -86,6 +86,35 @@ function releaseLock(projectDir) {
   } catch {
   }
 }
+var DEAD_DAEMON_TTL_MS = 5 * 60 * 1e3;
+function getDeadPath(projectDir) {
+  const resolvedPath = resolveProjectDir(projectDir);
+  const hash = crypto.createHash("md5").update(resolvedPath).digest("hex").substring(0, 8);
+  return `${tmpdir()}/tldr-${hash}.dead`;
+}
+function isDaemonMarkedDead(projectDir) {
+  const deadPath = getDeadPath(projectDir);
+  try {
+    if (!existsSync(deadPath)) return false;
+    const ts = parseInt(readFileSync(deadPath, "utf-8").trim(), 10);
+    if (isNaN(ts)) return false;
+    return Date.now() - ts < DEAD_DAEMON_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+function markDaemonDead(projectDir) {
+  try {
+    writeFileSync(getDeadPath(projectDir), Date.now().toString());
+  } catch {
+  }
+}
+function clearDeadMark(projectDir) {
+  try {
+    unlinkSync(getDeadPath(projectDir));
+  } catch {
+  }
+}
 var QUERY_TIMEOUT = 3e3;
 function getConnectionInfo(projectDir) {
   const resolvedPath = resolveProjectDir(projectDir);
@@ -172,10 +201,15 @@ function tryStartDaemon(projectDir) {
   }
   try {
     if (isDaemonProcessRunning(projectDir)) {
+      clearDeadMark(projectDir);
       return true;
     }
     if (isDaemonReachable(projectDir)) {
+      clearDeadMark(projectDir);
       return true;
+    }
+    if (isDaemonMarkedDead(projectDir)) {
+      return false;
     }
     if (!tryAcquireLock(projectDir)) {
       const start = Date.now();
@@ -209,6 +243,7 @@ function tryStartDaemon(projectDir) {
       const start = Date.now();
       while (Date.now() - start < 1e4) {
         if (isDaemonReachable(projectDir)) {
+          clearDeadMark(projectDir);
           const cooldown = Date.now() + 1e3;
           while (Date.now() < cooldown) {
           }
@@ -218,11 +253,16 @@ function tryStartDaemon(projectDir) {
         while (Date.now() < end) {
         }
       }
-      return isDaemonReachable(projectDir);
+      const finalCheck = isDaemonReachable(projectDir);
+      if (!finalCheck) {
+        markDaemonDead(projectDir);
+      }
+      return finalCheck;
     } finally {
       releaseLock(projectDir);
     }
   } catch {
+    markDaemonDead(projectDir);
     return false;
   }
 }
