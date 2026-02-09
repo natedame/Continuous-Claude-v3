@@ -12,7 +12,7 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
-import { queryDaemonSync, DaemonResponse, trackHookActivitySync } from './daemon-client.js';
+import { queryDaemonSync, DaemonResponse, trackHookActivitySync, isTldrAvailable } from './daemon-client.js';
 
 interface GrepInput {
   pattern: string;
@@ -439,6 +439,14 @@ async function main() {
 
   // Validate tool_input exists and has required fields
   if (!input.tool_input || typeof input.tool_input.pattern !== 'string') {
+    console.log('{}');
+    return;
+  }
+
+  // Fail-open: if TLDR infrastructure is unavailable, allow Grep through.
+  // Prevents death spirals where agents can't search code at all.
+  // Matches the fail-open pattern used by every other hook in the ecosystem.
+  if (!isTldrAvailable()) {
     console.log('{}');
     return;
   }

@@ -27,7 +27,7 @@ let tldrAvailableCache: boolean | null = null;
  * Check if TLDR CLI is available on the system.
  * Cached for the session to avoid repeated lookups.
  */
-function isTldrAvailable(): boolean {
+export function isTldrAvailable(): boolean {
   if (tldrAvailableCache !== null) {
     return tldrAvailableCache;
   }
@@ -139,6 +139,54 @@ function tryAcquireLock(projectDir: string): boolean {
 function releaseLock(projectDir: string): void {
   try {
     unlinkSync(getLockPath(projectDir));
+  } catch { /* ignore */ }
+}
+
+/** TTL for dead-daemon marker (5 minutes) */
+const DEAD_DAEMON_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Get dead-daemon marker file path.
+ * Uses same hash scheme as lock/pid files.
+ */
+function getDeadPath(projectDir: string): string {
+  const resolvedPath = resolveProjectDir(projectDir);
+  const hash = crypto.createHash('md5').update(resolvedPath).digest('hex').substring(0, 8);
+  return `${tmpdir()}/tldr-${hash}.dead`;
+}
+
+/**
+ * Check if daemon was recently marked dead.
+ * Returns true if marker exists and is within TTL, meaning we should skip startup.
+ */
+function isDaemonMarkedDead(projectDir: string): boolean {
+  const deadPath = getDeadPath(projectDir);
+  try {
+    if (!existsSync(deadPath)) return false;
+    const ts = parseInt(readFileSync(deadPath, 'utf-8').trim(), 10);
+    if (isNaN(ts)) return false;
+    return Date.now() - ts < DEAD_DAEMON_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Mark daemon as dead (failed to start).
+ * Subsequent tryStartDaemon calls will skip the expensive startup for TTL duration.
+ */
+function markDaemonDead(projectDir: string): void {
+  try {
+    writeFileSync(getDeadPath(projectDir), Date.now().toString());
+  } catch { /* ignore */ }
+}
+
+/**
+ * Clear dead-daemon marker (daemon is alive again).
+ */
+function clearDeadMark(projectDir: string): void {
+  try {
+    unlinkSync(getDeadPath(projectDir));
   } catch { /* ignore */ }
 }
 
@@ -406,13 +454,22 @@ export function tryStartDaemon(projectDir: string): boolean {
     // FAST CHECK: Is daemon process running? (checks PID file + kill -0)
     // This is faster and more reliable than socket ping
     if (isDaemonProcessRunning(projectDir)) {
+      clearDeadMark(projectDir);
       return true;  // Process exists, even if socket not ready yet
     }
 
     // SLOW CHECK: Is daemon reachable via socket?
     // Only needed if PID file doesn't exist (first start or cleaned up)
     if (isDaemonReachable(projectDir)) {
+      clearDeadMark(projectDir);
       return true;  // Already running, no need to spawn
+    }
+
+    // DEAD-DAEMON CACHE: If a recent start attempt failed, skip the expensive
+    // startup spin loop. Checked AFTER liveness checks so a daemon started by
+    // another process (or manually) is still detected.
+    if (isDaemonMarkedDead(projectDir)) {
+      return false;
     }
 
     // Try to acquire lock - if another process is starting daemon, wait for it
@@ -460,6 +517,7 @@ export function tryStartDaemon(projectDir: string): boolean {
       while (Date.now() - start < 10000) {
         if (isDaemonReachable(projectDir)) {
           // Daemon is ready - keep lock for a bit longer to prevent races
+          clearDeadMark(projectDir);
           const cooldown = Date.now() + 1000;
           while (Date.now() < cooldown) { /* spin */ }
           return true;
@@ -469,12 +527,17 @@ export function tryStartDaemon(projectDir: string): boolean {
         while (Date.now() < end) { /* spin */ }
       }
 
-      return isDaemonReachable(projectDir);
+      const finalCheck = isDaemonReachable(projectDir);
+      if (!finalCheck) {
+        markDaemonDead(projectDir);
+      }
+      return finalCheck;
     } finally {
       // Always release lock
       releaseLock(projectDir);
     }
   } catch {
+    markDaemonDead(projectDir);
     return false;
   }
 }
