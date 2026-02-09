@@ -63,18 +63,20 @@ function clearState(): void {
 }
 
 async function main() {
-  const input: StopHookInput = JSON.parse(readStdin());
-
-  // CRITICAL: Prevent infinite loops
-  if (input.stop_hook_active) {
+  // Early exit: check if Lean state exists BEFORE reading stdin.
+  // readStdin() blocks on readFileSync(0) and will hang if no input is piped,
+  // so we avoid it entirely when there's nothing to do.
+  const state = loadState();
+  if (!state || !state.has_errors) {
     console.log('{}');
     return;
   }
 
-  const state = loadState();
+  // Only read stdin if we actually need the session info
+  const input: StopHookInput = JSON.parse(readStdin());
 
-  // No Lean state or no errors - allow stop
-  if (!state || !state.has_errors) {
+  // CRITICAL: Prevent infinite loops
+  if (input.stop_hook_active) {
     console.log('{}');
     return;
   }

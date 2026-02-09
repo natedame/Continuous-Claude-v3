@@ -27,13 +27,13 @@ function clearState() {
   }
 }
 async function main() {
-  const input = JSON.parse(readStdin());
-  if (input.stop_hook_active) {
+  const state = loadState();
+  if (!state || !state.has_errors) {
     console.log("{}");
     return;
   }
-  const state = loadState();
-  if (!state || !state.has_errors) {
+  const input = JSON.parse(readStdin());
+  if (input.stop_hook_active) {
     console.log("{}");
     return;
   }
