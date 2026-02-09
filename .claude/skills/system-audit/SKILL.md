@@ -25,6 +25,7 @@ On startup, create these tasks (use TaskCreate):
 11. Deploy Infrastructure (Section 11)
 12. Autonomy Resource Limits (Section 12)
 13. Meta-Audit (Self-Improvement)
+13b. Swarm Cognitive Load Reduction Audit (Section 13b)
 14. Log Audit Completion
 
 Work through tasks in order, marking each complete before moving to the next.
@@ -640,6 +641,125 @@ Present a consolidated final report with:
 
 This ensures the audit improves itself over time.
 
+### 13b. Swarm Cognitive Load Reduction Audit
+
+Swarm Claudes carry cognitive load that could be handled by scripts, APIs, or hooks. This section identifies opportunities to replace "things swarms must know" with programmatic tooling.
+
+**13b-1. Static Information in CLAUDE.md That Could Be Runtime-Queryable:**
+
+```bash
+# Count hardcoded ports in swarm CLAUDE.md
+grep -c 'host\.docker\.internal:[0-9]' ~/local-ai/CLAUDE.md
+
+# Extract unique hardcoded ports
+grep -o 'host\.docker\.internal:[0-9]*' ~/local-ai/CLAUDE.md | sed 's/.*://' | sort -u
+
+# Compare CLAUDE.md ports vs ports.yaml source of truth
+echo "=== CLAUDE.md ports ===" && grep -o 'host\.docker\.internal:[0-9]*' ~/local-ai/CLAUDE.md | sed 's/.*://' | sort -u
+echo "=== ports.yaml ports ===" && grep -E '^\s+port:' ~/local-ai/ports.yaml | grep -o '[0-9]*' | sort -u
+
+# Check swarm--generate-claude-md for hardcoded ports
+grep -n '[0-9]\{4\}' ~/.zshrc | grep -i 'claude.md\|generate'
+```
+
+For each hardcoded port found:
+- Is this port also in `ports.yaml`? If yes, it should be fetched at runtime via `port get`
+- Is this port baked into `swarm--generate-claude-md()` in `~/.zshrc`? If yes, the function should use `port get` instead
+- Does the CLAUDE.md value match the current `ports.yaml` value? Mismatches indicate staleness
+
+**13b-2. Information Swarms Must "Know" vs Can Look Up:**
+
+```bash
+# Check env-requirements.yaml coverage (how many services have documented env vars)
+cat ~/local-ai/env-requirements.yaml 2>/dev/null | grep -c 'service:' || echo "File missing or empty"
+
+# Check if dependency graph exists anywhere in ports.yaml
+grep -c 'depends_on\|dependencies' ~/local-ai/ports.yaml
+
+# Check where MCP tools are defined (should be single source of truth)
+echo "=== librechat.yaml MCP refs ===" && grep -c 'mcpServers\|mcp_' ~/local-ai/librechat/librechat.yaml 2>/dev/null
+echo "=== ports.yaml MCP refs ===" && grep -c 'mcp' ~/local-ai/ports.yaml 2>/dev/null
+echo "=== deploy-trigger MCP refs ===" && grep -c 'mcp' ~/local-ai/bin/deploy-trigger.cjs 2>/dev/null
+
+# Check if CLAUDE.md duplicates info available via deploy-trigger /db endpoint
+grep -c '/db\|database\|connection string\|postgres' ~/local-ai/CLAUDE.md
+```
+
+Audit checklist:
+- **Service dependencies**: Is there a machine-readable dependency graph, or must swarms "know" what depends on what?
+- **Env var requirements**: How many of the services in `ports.yaml` have entries in `env-requirements.yaml`? Low coverage means swarms discover missing env vars at runtime
+- **MCP tool definitions**: Are MCP tools defined in a single place, or spread across librechat.yaml, ports.yaml, and deploy-trigger? Fragmentation means swarms can't reliably query "what tools exist"
+- **Database connections**: Does CLAUDE.md duplicate connection info that deploy-trigger `/db` endpoint already provides?
+
+**13b-3. Missing Programmatic Endpoints That Would Reduce Cognitive Load:**
+
+```bash
+# Check if deploy-trigger has a GET /services endpoint returning a port map
+grep -n 'services\|port.*map\|portMap' ~/local-ai/bin/deploy-trigger.cjs | head -20
+
+# Check if deploy-trigger exposes dependency info
+grep -n 'depend\|prerequisite\|requires' ~/local-ai/bin/deploy-trigger.cjs | head -10
+
+# Check if deploy-trigger has service readiness with prerequisite validation
+grep -n 'ready\|prereq\|health.*check\|preflight' ~/local-ai/bin/deploy-trigger.cjs | head -10
+
+# Check if deploy responses include feedback on what triggered the deploy
+grep -n 'trigger\|webhook\|auto.*deploy\|push.*event' ~/local-ai/bin/deploy-trigger.cjs | head -10
+```
+
+For each missing endpoint, assess:
+- How often do swarms need this info? (check incident reports and CLAUDE.md references)
+- Could this be a simple addition to deploy-trigger?
+- What's the current workaround? (parsing CLAUDE.md, asking user, guessing)
+
+**13b-4. Documentation Duplication Across Worktrees:**
+
+```bash
+# Count worktree CLAUDE.md copies
+find ~/local-ai/worktrees -name "CLAUDE.md" -maxdepth 2 2>/dev/null | wc -l
+
+# Measure divergence from main CLAUDE.md
+MAIN_HASH=$(md5 -q ~/local-ai/CLAUDE.md 2>/dev/null || md5sum ~/local-ai/CLAUDE.md | cut -d' ' -f1)
+for f in ~/local-ai/worktrees/*/CLAUDE.md; do
+  WT_HASH=$(md5 -q "$f" 2>/dev/null || md5sum "$f" | cut -d' ' -f1)
+  if [ "$MAIN_HASH" = "$WT_HASH" ]; then
+    echo "IDENTICAL: $f"
+  else
+    DIFF_LINES=$(diff ~/local-ai/CLAUDE.md "$f" | grep -c '^[<>]')
+    echo "DIVERGED ($DIFF_LINES lines): $f"
+  fi
+done
+```
+
+Identify:
+- Sections identical across ALL worktrees (candidates for shared mount or runtime fetch)
+- Sections that diverge per-worktree (legitimate per-feature context)
+- Total byte cost of duplication vs a fetch-on-startup approach
+
+**13b-5. Repetitive Swarm Tasks That Could Be Hooks or Scripts:**
+
+```bash
+# Check if swarm--preflight-services() exists and what it covers
+grep -A 30 'preflight-services\|preflight_services' ~/.zshrc | head -40
+
+# Check for post-push hooks in swarm containers
+ls -la ~/local-ai/bin/hooks/ 2>/dev/null
+
+# Check for common manual patterns in incident reports
+grep -l 'manually\|had to\|didn.t know\|forgot to' ~/swarm-admin/incidents/*.md 2>/dev/null | head -10
+```
+
+Look for:
+- Common tasks swarms do manually that could be pre-commit hooks, post-push hooks, or CLI shortcuts
+- Services that `swarm--preflight-services()` doesn't cover but swarms need at runtime
+- Patterns from incident reports where swarms failed because they didn't know something that could be programmatic
+
+**Output:** For each finding, provide:
+1. **What swarms currently must "know"** (the cognitive load)
+2. **Proposed programmatic replacement** (script, API endpoint, hook, or runtime query)
+3. **Effort estimate** (trivial/small/medium) to implement the replacement
+4. **Impact** (how many swarms/how often this cognitive load causes issues)
+
 ---
 
 ## Files Referenced
@@ -667,10 +787,14 @@ This ensures the audit improves itself over time.
 - Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
 - Deploy health check: `/Users/natedame/local-ai/bin/deploy-health-check`
 - Git backup audit: `/Users/natedame/local-ai/bin/git-backup-audit`
+- Swarm CLAUDE.md (constitution): `~/local-ai/CLAUDE.md`
+- Env requirements: `~/local-ai/env-requirements.yaml`
+- Deploy trigger: `~/local-ai/bin/deploy-trigger.cjs`
+- Zshrc (swarm functions): `~/.zshrc`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
 - CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
-- Pre-commit hook: `/Users/natedame/local-ai/.git/hooks/pre-commit`
+- Pre-commit hook: `/Users/natedame/local-ai/bin/hooks/pre-commit`
 - Backup script: `/Users/natedame/local-ai/bin/disaster-recovery-backup.sh`
 - Backup launchd: `~/Library/LaunchAgents/com.localai.disaster-recovery.plist`
 - Backup output: `~/backups/` (add to Google Drive manually)
