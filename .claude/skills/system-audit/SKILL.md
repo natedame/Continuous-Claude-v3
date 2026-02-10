@@ -24,9 +24,10 @@ On startup, create these tasks (use TaskCreate):
 10. Swarm Documentation Audits (Section 10)
 11. Deploy Infrastructure (Section 11)
 12. Autonomy Resource Limits (Section 12)
-13. Meta-Audit (Self-Improvement)
-13b. Swarm Cognitive Load Reduction Audit (Section 13b)
-14. Log Audit Completion
+13. Monitor Infrastructure (Section 13)
+14. Meta-Audit (Self-Improvement)
+14b. Swarm Cognitive Load Reduction Audit (Section 14b)
+15. Log Audit Completion
 
 Work through tasks in order, marking each complete before moving to the next.
 
@@ -597,6 +598,203 @@ docker exec cao-swarm-<name> tmux list-windows -t cao -F "#{window_name}"
 
 Reference: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
 
+### 13. Monitor Infrastructure Audit
+
+The monitoring stack (NATS, swarm-monitor, Monitor Claude, monitor.db) is the detection layer for swarm issues. If monitoring is broken, incidents go undetected. This section validates every component end-to-end.
+
+**13a. NATS Container Health:**
+```bash
+# Verify nats-server container is running
+docker ps --filter "name=nats-server" --format "{{.Names}} {{.Status}}"
+# Expected: nats-server Up ...
+
+# Verify NATS port is responsive (port looked up dynamically)
+NATS_PORT=$(~/local-ai/bin/port get nats)
+nc -z localhost "$NATS_PORT" && echo "✓ NATS port $NATS_PORT responsive" || echo "✗ NATS port $NATS_PORT not responding"
+
+# Verify auth is enabled (config file exists with authorization block)
+if [ -f ~/local-ai/nats/nats-server.conf ]; then
+  grep -q 'authorization' ~/local-ai/nats/nats-server.conf && echo "✓ NATS auth configured" || echo "✗ NATS auth NOT configured"
+else
+  echo "✗ CRITICAL: nats-server.conf missing at ~/local-ai/nats/nats-server.conf"
+fi
+```
+- CRITICAL if container not running or port unresponsive
+- HIGH if auth not configured (unauthenticated pub/sub)
+- MEDIUM if config file missing
+
+**13b. swarm-monitor LaunchAgent:**
+```bash
+# Verify LaunchAgent is loaded
+launchctl list | grep swarm-monitor
+# Expected: PID listed for com.local-ai.swarm-monitor
+
+# Check heartbeat freshness (should be within last 3 minutes)
+LAST_HB=$(sqlite3 ~/.statusboard/monitor.db "SELECT MAX(timestamp) FROM monitor_heartbeats WHERE component='swarm-monitor'")
+echo "Last swarm-monitor heartbeat: $LAST_HB"
+# Compare with current time — stale heartbeat means monitor is not running
+
+# Calculate staleness in seconds
+if [ -n "$LAST_HB" ]; then
+  LAST_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S" "$LAST_HB" "+%s" 2>/dev/null || date -d "$LAST_HB" "+%s" 2>/dev/null)
+  NOW_EPOCH=$(date "+%s")
+  DIFF=$(( NOW_EPOCH - LAST_EPOCH ))
+  [ "$DIFF" -le 180 ] && echo "✓ Heartbeat fresh (${DIFF}s ago)" || echo "✗ Heartbeat STALE (${DIFF}s ago)"
+fi
+```
+- CRITICAL if LaunchAgent not loaded (no monitoring at all)
+- HIGH if heartbeat older than 3 minutes (monitor may have crashed)
+
+**13c. Monitor Claude Liveness:**
+```bash
+# Check for pending alerts that need Monitor Claude attention
+PENDING=$(sqlite3 ~/.statusboard/monitor.db "SELECT COUNT(*) FROM monitor_actions WHERE decision_level='PENDING'")
+echo "Pending alerts: $PENDING"
+
+# If pending alerts exist, verify Monitor Claude tmux session is alive
+if [ "$PENDING" -gt 0 ]; then
+  tmux has-session -t monitor-claude 2>/dev/null && echo "✓ monitor-claude session exists" || echo "✗ CRITICAL: monitor-claude session MISSING with $PENDING pending alerts"
+fi
+```
+- CRITICAL if pending alerts exist but monitor-claude session is missing
+- MEDIUM if no pending alerts (session not required)
+
+**13d. monitor.db Integrity:**
+```bash
+# WAL mode check (should be "wal" for concurrent reads)
+JOURNAL=$(sqlite3 ~/.statusboard/monitor.db "PRAGMA journal_mode")
+echo "Journal mode: $JOURNAL"
+[ "$JOURNAL" = "wal" ] && echo "✓ WAL mode enabled" || echo "✗ Not in WAL mode: $JOURNAL"
+
+# Schema version check (should be >= 2)
+SCHEMA_VER=$(sqlite3 ~/.statusboard/monitor.db "PRAGMA user_version")
+echo "Schema version: $SCHEMA_VER"
+[ "$SCHEMA_VER" -ge 2 ] && echo "✓ Schema version OK ($SCHEMA_VER)" || echo "✗ Schema version too low: $SCHEMA_VER (expected >= 2)"
+
+# Backup timestamp via disaster recovery
+~/local-ai/bin/disaster-recovery-check 2>/dev/null | grep -i "monitor\|statusboard" || echo "Check DR backup includes monitor.db"
+```
+- HIGH if not in WAL mode (concurrent access may corrupt)
+- HIGH if schema version < 2 (missing tables/columns)
+- MEDIUM if backup timestamp is stale
+
+**13e. rules.yaml Validation:**
+```bash
+# Verify rules file exists
+if [ -f ~/swarm-admin/sidecar/rules.yaml ]; then
+  echo "✓ rules.yaml exists"
+  # Basic YAML parse test
+  python3 -c "import yaml; yaml.safe_load(open('$HOME/swarm-admin/sidecar/rules.yaml'))" 2>&1 && echo "✓ YAML parses OK" || echo "✗ YAML parse error"
+  # Count rules defined
+  grep -c '^\s*- pattern:' ~/swarm-admin/sidecar/rules.yaml || echo "No pattern rules found"
+else
+  echo "✗ CRITICAL: rules.yaml missing at ~/swarm-admin/sidecar/rules.yaml"
+fi
+```
+- CRITICAL if file missing (no monitoring rules at all)
+- HIGH if YAML parse fails (rules won't load)
+
+**13f. Inbox File Count (Monitor Claude Backlog):**
+```bash
+# Count unprocessed inbox files
+INBOX_COUNT=$(ls ~/monitor-claude/inbox/ 2>/dev/null | wc -l | tr -d ' ')
+echo "Monitor Claude inbox: $INBOX_COUNT files"
+
+if [ "$INBOX_COUNT" -gt 20 ]; then
+  echo "✗ HIGH: $INBOX_COUNT unprocessed files — Monitor Claude may be stuck"
+elif [ "$INBOX_COUNT" -gt 10 ]; then
+  echo "⚠ MEDIUM: $INBOX_COUNT unprocessed files — Monitor Claude may be falling behind"
+else
+  echo "✓ Inbox OK ($INBOX_COUNT files)"
+fi
+```
+- HIGH if >20 files (Monitor Claude likely stuck or crashed)
+- MEDIUM if >10 files (Monitor Claude may be falling behind)
+- LOW if <=10
+
+**13g. Circuit Breaker Status:**
+```bash
+# Check for RED (critical) actions in last 24 hours
+RED_COUNT=$(sqlite3 ~/.statusboard/monitor.db "SELECT COUNT(*) FROM monitor_actions WHERE decision_level='RED' AND timestamp > datetime('now', '-24 hours')")
+echo "RED-level actions in last 24h: $RED_COUNT"
+
+if [ "$RED_COUNT" -gt 0 ]; then
+  echo "⚠ Recent critical actions detected — review:"
+  sqlite3 ~/.statusboard/monitor.db "SELECT timestamp, action_type, summary FROM monitor_actions WHERE decision_level='RED' AND timestamp > datetime('now', '-24 hours') ORDER BY timestamp DESC LIMIT 5"
+fi
+```
+- HIGH if RED actions in last 24h (indicates active incidents)
+- Review each RED action to determine if it was resolved
+
+**13h. Docker Log Rotation:**
+```bash
+# Verify log rotation config on cao-swarm containers
+for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
+  LOG_CONFIG=$(docker inspect --format '{{json .HostConfig.LogConfig}}' "$c" 2>/dev/null)
+  if echo "$LOG_CONFIG" | grep -q '"max-size"'; then
+    MAX_SIZE=$(echo "$LOG_CONFIG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('Config',{}).get('max-size','UNSET'))" 2>/dev/null)
+    echo "✓ $c: log max-size=$MAX_SIZE"
+  else
+    echo "✗ $c: NO log rotation configured"
+  fi
+done
+```
+- MEDIUM if any cao-swarm container lacks `max-size` log config (disk fill risk)
+- Expected: `max-size=10m` on all swarm containers
+
+**13i. monitor-maintenance LaunchAgent:**
+```bash
+# Verify maintenance LaunchAgent is loaded
+launchctl list | grep monitor-maintenance
+# Expected: PID or exit-code listed for com.local-ai.monitor-maintenance
+
+if launchctl list 2>/dev/null | grep -q "com.local-ai.monitor-maintenance"; then
+  echo "✓ monitor-maintenance LaunchAgent loaded"
+else
+  echo "✗ HIGH: monitor-maintenance LaunchAgent NOT loaded"
+fi
+```
+- HIGH if not loaded (DB maintenance, log rotation, cleanup won't run)
+
+**13j. Feedback Table Orphan Check:**
+```bash
+# Check for orphaned feedback_links referencing deleted feedback entries
+ORPHAN_COUNT=$(sqlite3 ~/.statusboard/monitor.db "
+  SELECT COUNT(*) FROM feedback_links fl
+  WHERE NOT EXISTS (
+    SELECT 1 FROM monitor_feedback mf
+    WHERE mf.id = fl.source_id
+    AND fl.source_table = 'monitor_feedback'
+  )
+" 2>/dev/null)
+echo "Orphaned feedback links: $ORPHAN_COUNT"
+
+if [ "$ORPHAN_COUNT" -gt 0 ]; then
+  echo "⚠ MEDIUM: $ORPHAN_COUNT orphaned feedback_links entries — indicates deleted feedback without cascade"
+else
+  echo "✓ No orphaned feedback links"
+fi
+```
+- MEDIUM if orphans exist (data integrity issue, not functionally breaking)
+- LOW if zero orphans
+
+**13k. log-action.sh Script:**
+```bash
+# Verify log-action.sh exists and is executable
+SCRIPT=~/monitor-claude/scripts/log-action.sh
+if [ -f "$SCRIPT" ]; then
+  if [ -x "$SCRIPT" ]; then
+    echo "✓ log-action.sh exists and is executable"
+  else
+    echo "✗ HIGH: log-action.sh exists but is NOT executable"
+  fi
+else
+  echo "✗ CRITICAL: log-action.sh missing at ~/monitor-claude/scripts/log-action.sh"
+fi
+```
+- CRITICAL if script missing (Monitor Claude cannot log actions)
+- HIGH if not executable (will fail at runtime)
+
 ## Execution Process
 
 1. **Phase 1: Audit** - Systematically investigate each area above
@@ -641,11 +839,11 @@ Present a consolidated final report with:
 
 This ensures the audit improves itself over time.
 
-### 13b. Swarm Cognitive Load Reduction Audit
+### 14b. Swarm Cognitive Load Reduction Audit
 
 Swarm Claudes carry cognitive load that could be handled by scripts, APIs, or hooks. This section identifies opportunities to replace "things swarms must know" with programmatic tooling.
 
-**13b-1. Static Information in CLAUDE.md That Could Be Runtime-Queryable:**
+**14b-1. Static Information in CLAUDE.md That Could Be Runtime-Queryable:**
 
 ```bash
 # Count hardcoded ports in swarm CLAUDE.md
@@ -667,7 +865,7 @@ For each hardcoded port found:
 - Is this port baked into `swarm--generate-claude-md()` in `~/.zshrc`? If yes, the function should use `port get` instead
 - Does the CLAUDE.md value match the current `ports.yaml` value? Mismatches indicate staleness
 
-**13b-2. Information Swarms Must "Know" vs Can Look Up:**
+**14b-2. Information Swarms Must "Know" vs Can Look Up:**
 
 ```bash
 # Check env-requirements.yaml coverage (how many services have documented env vars)
@@ -691,7 +889,7 @@ Audit checklist:
 - **MCP tool definitions**: Are MCP tools defined in a single place, or spread across librechat.yaml, ports.yaml, and deploy-trigger? Fragmentation means swarms can't reliably query "what tools exist"
 - **Database connections**: Does CLAUDE.md duplicate connection info that deploy-trigger `/db` endpoint already provides?
 
-**13b-3. Missing Programmatic Endpoints That Would Reduce Cognitive Load:**
+**14b-3. Missing Programmatic Endpoints That Would Reduce Cognitive Load:**
 
 ```bash
 # Check if deploy-trigger has a GET /services endpoint returning a port map
@@ -712,7 +910,7 @@ For each missing endpoint, assess:
 - Could this be a simple addition to deploy-trigger?
 - What's the current workaround? (parsing CLAUDE.md, asking user, guessing)
 
-**13b-4. Documentation Duplication Across Worktrees:**
+**14b-4. Documentation Duplication Across Worktrees:**
 
 ```bash
 # Count worktree CLAUDE.md copies
@@ -736,7 +934,7 @@ Identify:
 - Sections that diverge per-worktree (legitimate per-feature context)
 - Total byte cost of duplication vs a fetch-on-startup approach
 
-**13b-5. Repetitive Swarm Tasks That Could Be Hooks or Scripts:**
+**14b-5. Repetitive Swarm Tasks That Could Be Hooks or Scripts:**
 
 ```bash
 # Check if swarm--preflight-services() exists and what it covers
@@ -803,6 +1001,11 @@ Look for:
 - System audit log: `/Users/natedame/local-ai/bin/system-audit-log`
 - System audit check: `/Users/natedame/local-ai/bin/system-audit-check`
 - Audit timestamp: `~/backups/last-system-audit.txt`
+- NATS config: `~/local-ai/nats/nats-server.conf`
+- Monitor database: `~/.statusboard/monitor.db`
+- Monitor rules: `~/swarm-admin/sidecar/rules.yaml`
+- Monitor Claude inbox: `~/monitor-claude/inbox/`
+- Monitor log-action script: `~/monitor-claude/scripts/log-action.sh`
 
 ## Audit Completion Logging
 
