@@ -795,6 +795,76 @@ fi
 - CRITICAL if script missing (Monitor Claude cannot log actions)
 - HIGH if not executable (will fail at runtime)
 
+**13l. Claude Code Version Check:**
+
+Check Claude Code version across host and swarm containers. Strategy-aware: respects whether the Dockerfile uses pinned versions or @latest. System-audit should NEVER change the strategy itself.
+
+```bash
+# Host version
+claude --version 2>/dev/null || echo "claude not installed on host"
+
+# Latest available version
+npm view @anthropic-ai/claude-code version 2>/dev/null || echo "cannot check npm registry"
+
+# Dockerfile strategy detection
+DOCKERFILE="$HOME/cao-launcher/Dockerfile"
+if grep -q '@anthropic-ai/claude-code@[0-9]' "$DOCKERFILE" 2>/dev/null; then
+  echo "STRATEGY: Pinned version"
+  PINNED_VERSION=$(grep -oE '@anthropic-ai/claude-code@[0-9][^ \\]+' "$DOCKERFILE" | head -1 | sed 's/@anthropic-ai\/claude-code@//')
+  echo "PINNED TO: $PINNED_VERSION"
+  LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null)
+  if [[ -n "$LATEST" && "$PINNED_VERSION" != "$LATEST" ]]; then
+    echo "UPDATE AVAILABLE: $PINNED_VERSION -> $LATEST"
+  else
+    echo "UP TO DATE"
+  fi
+else
+  echo "STRATEGY: Auto-update (@latest)"
+  echo "Swarms install latest on image build. No action needed."
+fi
+
+# Version in running swarm containers (sample first one)
+SAMPLE_CONTAINER=$(docker ps --filter "name=cao-swarm" --format '{{.Names}}' | head -1)
+if [[ -n "$SAMPLE_CONTAINER" ]]; then
+  CONTAINER_VERSION=$(docker exec "$SAMPLE_CONTAINER" claude --version 2>/dev/null || echo "unknown")
+  echo "CONTAINER VERSION ($SAMPLE_CONTAINER): $CONTAINER_VERSION"
+fi
+```
+
+**If strategy is "Pinned version" and update is available:**
+
+Update the pin in the Dockerfile and rebuild:
+
+```bash
+# Update version pin (only if strategy is pinned)
+LATEST=$(npm view @anthropic-ai/claude-code version)
+sed -i '' "s/@anthropic-ai\/claude-code@[0-9][^ \\\\]*/@anthropic-ai\/claude-code@${LATEST}/" "$HOME/cao-launcher/Dockerfile"
+cd "$HOME/cao-launcher" && docker build -t cao-swarm .
+# Commit the version bump
+git add Dockerfile && git commit -m "chore: bump claude-code to $LATEST" && git push
+```
+
+**If strategy is "Auto-update (@latest)":** Report version, no action needed. Do NOT change the strategy.
+
+- HIGH if pinned version is behind latest (security/bug fix gap)
+- OK if auto-update strategy (just report current version)
+- MEDIUM if host version differs significantly from container version
+
+**13m. Headless Swarm Detection:**
+
+```bash
+# Check for swarms with no attached terminal
+curl -s http://localhost:$(~/local-ai/bin/port get deploy-trigger)/headless-swarms 2>/dev/null | python3 -m json.tool
+
+# Check sentinel is running
+launchctl list | grep swarm-terminal-sentinel
+
+# Check state files
+ls -la ~/.cache/swarm-terminals/ 2>/dev/null
+```
+- MEDIUM if headless swarms detected (user may have lost connection)
+- HIGH if sentinel not running (headless detection disabled)
+
 ## Execution Process
 
 1. **Phase 1: Audit** - Systematically investigate each area above
