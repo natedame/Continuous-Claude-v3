@@ -16,8 +16,7 @@ On startup, create these tasks (use TaskCreate):
 3. Current Swarms (Section 3)
 4. Configuration Audit (Section 4)
 5. Port Management (Section 5)
-6. CAO & Swarm Configuration (Section 6)
-6b. Agent Teams Configuration (Section 6b)
+6. Swarm Configuration (Section 6)
 7. System Resources (Section 7)
 8. Disaster Recovery (Section 8)
 9. Monitoring Gap Analysis (Section 9)
@@ -149,83 +148,50 @@ The port-audit script scans for ALL port patterns (known AND unknown), categoriz
 - Test hook catches bad patterns: `echo 'PORT=9999' | grep -E "PORT\s*=\s*[0-9]+"`
 - Swarms have port access: `docker exec <swarm> cat /app/ports.yaml`
 
-### 6. CAO & Swarm Configuration
-CAO (CLI Agent Orchestrator) manages multi-agent swarms. Version mismatches cause silent failures.
+### 6. Swarm Configuration
+All swarms use Claude's native multi-agent mode (Agent Teams). Verify configuration integrity across host template and running containers.
 
-**Automated CAO Configuration Check:**
+**6-1. Permissions bypass (settings.json):**
 ```bash
-~/local-ai/bin/cao-config-check          # Full configuration check
-~/local-ai/bin/cao-config-check --json   # JSON output for automation
-```
-
-The cao-config-check script verifies:
-- ~/.claude-swarm.json bypass flags (bypassPermissionsModeAccepted, hasCompletedOnboarding)
-- Host Claude version vs container Claude version
-- CAO prompt pattern (❯ vs >)
-- Agent profiles exist (code_supervisor.md, developer.md, reviewer.md)
-- Shell integration (swarm functions in ~/.zshrc)
-- CAO installation status
-
-**If CAO times out with WAITING_USER_ANSWER:**
-1. Check if Claude shows onboarding prompt (theme selection)
-2. Check if Claude shows bypass permissions prompt
-3. Check if CAO pattern matches Claude's prompt character
-
-**Manual checks (if needed):**
-```bash
-# Check CAO prompt pattern in container
-docker exec <swarm> grep "IDLE_PROMPT_PATTERN" /home/swarm/.local/share/uv/tools/cli-agent-orchestrator/lib/python*/site-packages/cli_agent_orchestrator/providers/claude_code.py
-```
-
-### 6b. Agent Teams Configuration
-Agent Teams swarms use Claude's native multi-agent mode instead of CAO. They have different configuration requirements. CAO checks (Section 6 above) do NOT apply to team swarms.
-
-**Identify team swarms:**
-```bash
-# Team swarms run `claude` directly (no CAO python process)
-for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
-  if docker exec "$c" pgrep -f "cli-agent-orchestrator" >/dev/null 2>&1; then
-    echo "CAO:  $c"
-  else
-    echo "TEAM: $c"
-  fi
-done
-```
-
-**For each team swarm, verify:**
-
-**6b-1. Permissions bypass (settings.json):**
-```bash
-# Must have permissions.defaultMode — the old bypassPermissions:true alone is insufficient
-docker exec <team-swarm> python3 -c "
+# For each running swarm, verify permissions.defaultMode
+for c in $(docker ps --filter "name=swarm-" --format "{{.Names}}"); do
+  echo "=== $c ==="
+  docker exec "$c" python3 -c "
 import json
 s = json.load(open('/home/swarm/.claude/settings.json'))
 mode = s.get('permissions',{}).get('defaultMode')
 print('✓' if mode == 'bypassPermissions' else '✗', 'permissions.defaultMode:', mode)
-"
+" 2>/dev/null || echo "✗ Could not read settings.json"
+done
 ```
 
-**6b-2. Wrapper binary integrity:**
+**6-2. Wrapper binary integrity:**
 ```bash
 # The claude binary should be a wrapper that injects --dangerously-skip-permissions
 # npm updates in entrypoint can overwrite this — entrypoint should restore it
-docker exec <team-swarm> head -3 $(docker exec <team-swarm> which claude)
-# Expected: #!/bin/bash + exec ...claude-original --dangerously-skip-permissions "$@"
+for c in $(docker ps --filter "name=swarm-" --format "{{.Names}}"); do
+  echo "=== $c ==="
+  docker exec "$c" head -3 $(docker exec "$c" which claude 2>/dev/null) 2>/dev/null
+  # Expected: #!/bin/bash + exec ...claude-original --dangerously-skip-permissions "$@"
+done
 ```
 
-**6b-3. Team mode settings:**
+**6-3. Team mode settings:**
 ```bash
-docker exec <team-swarm> python3 -c "
+for c in $(docker ps --filter "name=swarm-" --format "{{.Names}}"); do
+  echo "=== $c ==="
+  docker exec "$c" python3 -c "
 import json
 s = json.load(open('/home/swarm/.claude/settings.json'))
 tm = s.get('teammateMode')
 exp = s.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')
 print('✓' if tm == 'tmux' else '✗', 'teammateMode:', tm)
 print('✓' if exp == '1' else '✗', 'AGENT_TEAMS env:', exp)
-"
+" 2>/dev/null || echo "✗ Could not read settings.json"
+done
 ```
 
-**6b-4. Host template integrity:**
+**6-4. Host template integrity:**
 ```bash
 # The host template must have correct format — all new swarms copy from this
 python3 -c "
@@ -236,7 +202,45 @@ print('✓' if mode == 'bypassPermissions' else '✗', 'Host template permission
 "
 ```
 
-**Reference:** Incident `2026-02-06-team-swarm-permissions-bypass-broken.md` — npm update overwrote wrapper, settings had wrong format, team swarms prompted for permissions.
+**6-5. Hooks configured correctly:**
+```bash
+# Verify hooks exist in host template
+python3 -c "
+import json
+s = json.load(open('$HOME/.claude-swarm/settings.json'))
+hooks = s.get('hooks', {})
+print('✓' if hooks else '✗', 'Hooks configured:', bool(hooks))
+"
+```
+
+**6-6. Per-swarm config directory audit:**
+```bash
+# Scan ~/.claude-swarm-*/settings.json for expected structure
+# These directories are created per-swarm and can drift from the template
+for d in ~/.claude-swarm-*/; do
+  [ -d "$d" ] || continue
+  name=$(basename "$d")
+  if [ -f "$d/settings.json" ]; then
+    python3 -c "
+import json, sys
+s = json.load(open('$d/settings.json'))
+mode = s.get('permissions',{}).get('defaultMode')
+exp = s.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')
+issues = []
+if mode != 'bypassPermissions': issues.append('missing permissions.defaultMode')
+if exp != '1': issues.append('missing AGENT_TEAMS env')
+if issues:
+  print('✗', '$name:', ', '.join(issues))
+else:
+  print('✓', '$name: OK')
+" 2>/dev/null
+  else
+    echo "✗ $name: no settings.json"
+  fi
+done
+```
+
+**Reference:** Incident `2026-02-06-team-swarm-permissions-bypass-broken.md` — npm update overwrote wrapper, settings had wrong format, swarms prompted for permissions.
 
 ### 7. System Resources
 - Check host system memory, CPU, disk usage
@@ -285,7 +289,7 @@ The disaster-recovery-check script verifies:
 - All repos have git remotes
 - Uncommitted work in key repos (warning)
 - Google Drive folders exist (Documents, Desktop, projects)
-- Secrets are captured (librechat.env, cnm.env, cao-launcher.env)
+- Secrets are captured (librechat.env, cnm.env, swarm-launcher.env)
 
 **Manual checks (if needed):**
 ```bash
@@ -566,7 +570,7 @@ Verify the autonomous operation safety systems are working:
 **Agent Limits:**
 ```bash
 # Check SWARM_MAX_AGENTS is set in swarm containers
-docker exec cao-swarm-<name> env | grep SWARM_MAX_AGENTS
+docker exec swarm-<name> env | grep SWARM_MAX_AGENTS
 ```
 - Verify agents block at limit with clear message
 - Verify slot reopens when agent completes
@@ -578,7 +582,7 @@ docker exec cao-swarm-<name> env | grep SWARM_MAX_AGENTS
 
 **Docker PID Limit:**
 ```bash
-docker inspect cao-swarm-<name> --format='{{.HostConfig.PidsLimit}}'
+docker inspect swarm-<name> --format='{{.HostConfig.PidsLimit}}'
 # Expected: 500
 ```
 
@@ -593,7 +597,7 @@ find ~/.claude-swarm-*/debug -name "*.txt" -mtime +7 -print | head -5
 **Orphan Detection:**
 ```bash
 # Check for tmux windows without active Claude process
-docker exec cao-swarm-<name> tmux list-windows -t cao -F "#{window_name}"
+docker exec swarm-<name> tmux list-windows -t main -F "#{window_name}"
 ```
 
 Reference: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
@@ -728,8 +732,8 @@ fi
 
 **13h. Docker Log Rotation:**
 ```bash
-# Verify log rotation config on cao-swarm containers
-for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
+# Verify log rotation config on swarm containers
+for c in $(docker ps --filter "name=swarm-" --format "{{.Names}}"); do
   LOG_CONFIG=$(docker inspect --format '{{json .HostConfig.LogConfig}}' "$c" 2>/dev/null)
   if echo "$LOG_CONFIG" | grep -q '"max-size"'; then
     MAX_SIZE=$(echo "$LOG_CONFIG" | python3 -c "import sys,json; print(json.load(sys.stdin).get('Config',{}).get('max-size','UNSET'))" 2>/dev/null)
@@ -739,7 +743,7 @@ for c in $(docker ps --filter "name=cao-swarm" --format "{{.Names}}"); do
   fi
 done
 ```
-- MEDIUM if any cao-swarm container lacks `max-size` log config (disk fill risk)
+- MEDIUM if any swarm container lacks `max-size` log config (disk fill risk)
 - Expected: `max-size=10m` on all swarm containers
 
 **13i. monitor-maintenance LaunchAgent:**
@@ -807,7 +811,7 @@ claude --version 2>/dev/null || echo "claude not installed on host"
 npm view @anthropic-ai/claude-code version 2>/dev/null || echo "cannot check npm registry"
 
 # Dockerfile strategy detection
-DOCKERFILE="$HOME/cao-launcher/Dockerfile"
+DOCKERFILE="$HOME/swarm-launcher/Dockerfile"
 if grep -q '@anthropic-ai/claude-code@[0-9]' "$DOCKERFILE" 2>/dev/null; then
   echo "STRATEGY: Pinned version"
   PINNED_VERSION=$(grep -oE '@anthropic-ai/claude-code@[0-9][^ \\]+' "$DOCKERFILE" | head -1 | sed 's/@anthropic-ai\/claude-code@//')
@@ -824,7 +828,7 @@ else
 fi
 
 # Version in running swarm containers (sample first one)
-SAMPLE_CONTAINER=$(docker ps --filter "name=cao-swarm" --format '{{.Names}}' | head -1)
+SAMPLE_CONTAINER=$(docker ps --filter "name=swarm-" --format '{{.Names}}' | head -1)
 if [[ -n "$SAMPLE_CONTAINER" ]]; then
   CONTAINER_VERSION=$(docker exec "$SAMPLE_CONTAINER" claude --version 2>/dev/null || echo "unknown")
   echo "CONTAINER VERSION ($SAMPLE_CONTAINER): $CONTAINER_VERSION"
@@ -838,8 +842,8 @@ Update the pin in the Dockerfile and rebuild:
 ```bash
 # Update version pin (only if strategy is pinned)
 LATEST=$(npm view @anthropic-ai/claude-code version)
-sed -i '' "s/@anthropic-ai\/claude-code@[0-9][^ \\\\]*/@anthropic-ai\/claude-code@${LATEST}/" "$HOME/cao-launcher/Dockerfile"
-cd "$HOME/cao-launcher" && docker build -t cao-swarm .
+sed -i '' "s/@anthropic-ai\/claude-code@[0-9][^ \\\\]*/@anthropic-ai\/claude-code@${LATEST}/" "$HOME/swarm-launcher/Dockerfile"
+cd "$HOME/swarm-launcher" && docker build -t swarm .
 # Commit the version bump
 git add Dockerfile && git commit -m "chore: bump claude-code to $LATEST" && git push
 ```
@@ -1045,7 +1049,6 @@ Look for:
 - Port audit: `/Users/natedame/local-ai/bin/port-audit`
 - Service health: `/Users/natedame/local-ai/bin/service-health`
 - Swarm health: `/Users/natedame/local-ai/bin/swarm-health`
-- CAO config check: `/Users/natedame/local-ai/bin/cao-config-check`
 - DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
 - Playwright docs audit: `/Users/natedame/local-ai/bin/playwright-docs-audit`
 - Swarm leakage audit: `/Users/natedame/local-ai/bin/swarm-leakage-audit`
@@ -1060,8 +1063,8 @@ Look for:
 - Deploy trigger: `~/local-ai/bin/deploy-trigger.cjs`
 - Zshrc (swarm functions): `~/.zshrc`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
-- Swarm config: `~/.claude-swarm.json`, `~/.claude-swarm/`
-- CAO agent profiles: `~/.aws/cli-agent-orchestrator/agent-context/`
+- Swarm config template: `~/.claude-swarm/`
+- Per-swarm configs: `~/.claude-swarm-*/`
 - Pre-commit hook: `/Users/natedame/local-ai/bin/hooks/pre-commit`
 - Backup script: `/Users/natedame/local-ai/bin/disaster-recovery-backup.sh`
 - Backup launchd: `~/Library/LaunchAgents/com.localai.disaster-recovery.plist`
