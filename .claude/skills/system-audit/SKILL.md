@@ -563,6 +563,20 @@ The script checks:
 - Reports commits ahead of main, last commit date/subject
 - Provides recovery instructions
 
+**Recommended Remediation:**
+When backup branches are found, push unique commits to GitHub to preserve them, then delete all local backup branches:
+```bash
+# For each backup branch with unique commits (commits ahead of main):
+git push origin <branch>
+
+# After all unique commits are preserved on GitHub, delete all local backup branches:
+git branch | grep 'backup/' | xargs git branch -D
+
+# Also check for non-standard backup branch names:
+git branch | grep 'backup-' | xargs git branch -D
+```
+This is safe because unique commits are preserved on GitHub before local deletion. Do NOT delete before pushing.
+
 **Reference:** Incident `2026-02-05_deploy-auto-push-for-swarm-autonomy.md`
 
 ### 12. Autonomy Resource Limits (Forever Autonomous)
