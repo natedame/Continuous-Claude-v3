@@ -104,8 +104,10 @@ The swarm-health script checks per-swarm:
 - Stale debug logs (>7 days)
 
 Global checks:
-- Orphaned worktrees (worktree exists but no swarm running)
 - Total Docker memory usage
+- NOTE: Worktree orphan detection is in Section 10f (worktree-audit), which correctly
+  uses ticket status. A worktree without a running container is NORMAL — containers
+  come and go between sessions. Only worktrees with closed/done tickets are orphaned.
 
 **Manual checks (if needed):**
 - Detailed PLAN.md review for specific blockers
