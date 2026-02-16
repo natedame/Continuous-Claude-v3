@@ -38,6 +38,57 @@ When given a plan path:
 - Think deeply about how the pieces fit together
 - Create a todo list to track your progress
 
+### Pre-Implementation Plan Validation
+
+Before starting implementation, validate the plan structure:
+
+```
+/validate-plan <plan-path>
+```
+
+This checks plan quality: acceptance criteria specificity, single-feature granularity, browser testability, parallel safety, and steady-state assertions.
+
+- If **PASS**: proceed to premortem
+- If **NEEDS REVISION**: present findings. User can fix the plan or say "skip validation" to proceed.
+- **Skip if** the plan already has a "## Validation" section marked PASS, or user says `--skip-validation`
+
+### Pre-Implementation Test Scaffolding (Optional)
+
+After plan validation passes and before implementation begins, generate failing test stubs from the plan. This gives the implementing agent tests to code toward green (TDD from the plan).
+
+**When to use:** Plans with browser-testable acceptance criteria and a `tests/e2e/` directory in the project.
+
+**How it works:**
+1. Spawn a Sonnet agent with the plan content
+2. Agent reads each plan item with testable acceptance criteria
+3. For each, generates a minimal Playwright test stub in `tests/e2e/plan-<feature>.spec.ts`
+4. Stubs use `data-testid` selectors where specified, navigate to the correct page, and assert expected behavior
+5. All stubs start **failing** (red) — implementation makes them green
+
+```
+Task(
+  subagent_type="general-purpose",
+  model="sonnet",
+  run_in_background=true,
+  prompt="""
+  Read the plan at <plan-path>. For each checklist item that has browser-testable
+  acceptance criteria, generate a Playwright test stub in tests/e2e/.
+
+  Rules:
+  - Use relative URLs (no localhost)
+  - Use data-testid selectors where specified in the plan
+  - Each test should be minimal: navigate, find element, assert behavior
+  - Tests should FAIL initially (assert the expected state that doesn't exist yet)
+  - Filename: plan-<short-description>.spec.ts
+  - Skip items that aren't browser-testable
+
+  Write a status line to .claude/cache/test-scaffold-status.txt when done.
+  """
+)
+```
+
+**Skip if:** No `tests/e2e/` directory exists, plan has no testable items, or user says `--skip-scaffolding`.
+
 ### Pre-Implementation Risk Check
 
 Before starting implementation, run a deep pre-mortem:
@@ -210,10 +261,19 @@ For each task in the plan:
    - Identify the specific task
 
 2. **Spawn implementation agent:**
+
+   **Model routing:** Check if the task has a `model:` annotation (e.g., `model: sonnet`, `model: haiku`, `model: opus`). Use the annotated model. If no annotation, default to `sonnet`.
+
+   | Annotation | Model ID | Use For |
+   |------------|----------|---------|
+   | `model: haiku` | `haiku` | File search, code exploration, simple extraction |
+   | `model: sonnet` | `sonnet` | Standard implementation, code review, test writing |
+   | `model: opus` | `opus` | Architectural decisions, novel problem-solving, complex debugging |
+
    ```
    Task(
      subagent_type="general-purpose",
-     model="claude-opus-4-5-20251101",
+     model="<from task annotation or 'sonnet'>",
      prompt="""
      [Paste contents of .claude/skills/implement_task/SKILL.md here]
 

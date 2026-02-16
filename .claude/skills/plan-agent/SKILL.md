@@ -162,6 +162,7 @@ Use this structure:
 ## Tasks
 
 ### Task 1: [Task Name]
+**model: sonnet** *(haiku | sonnet | opus — route to cheapest capable model)*
 [Description of what this task accomplishes]
 - [ ] [Specific change 1]
 - [ ] [Specific change 2]
@@ -170,6 +171,7 @@ Use this structure:
 - `path/to/file.ts`
 
 ### Task 2: [Task Name]
+**model: sonnet**
 [Description]
 - [ ] [Specific change 1]
 - [ ] [Specific change 2]
