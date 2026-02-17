@@ -285,6 +285,7 @@ Flag images older than 90 days for update consideration.
 The disaster-recovery-check script verifies:
 - Backup age (should be <24 hours)
 - LaunchD service loaded (com.localai.disaster-recovery)
+- All com.local-ai.* LaunchAgents loaded (plist exists → agent loaded)
 - All expected directories exist (secrets/, launchagents/, db/, dotfiles-snapshot/)
 - Brewfile exists
 - Database dumps are recent and non-empty (cnm, cc, letta, mongo)
