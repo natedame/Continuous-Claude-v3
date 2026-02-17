@@ -40,13 +40,13 @@ When given a plan path:
 
 ### Pre-Implementation Plan Validation
 
-Before starting implementation, validate the plan structure:
+Before starting implementation, validate and optimize the plan for swarm execution:
 
 ```
-/validate-plan <plan-path>
+/swarm-plan <plan-path>
 ```
 
-This checks plan quality: acceptance criteria specificity, single-feature granularity, browser testability, parallel safety, and steady-state assertions.
+This audits plan quality (acceptance criteria, granularity, testability), builds parallel wave structure, routes models, adds failure handling, and ensures dispatch templates are complete.
 
 - If **PASS**: proceed to premortem
 - If **NEEDS REVISION**: present findings. User can fix the plan or say "skip validation" to proceed.
