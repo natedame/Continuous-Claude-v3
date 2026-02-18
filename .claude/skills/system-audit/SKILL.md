@@ -47,6 +47,14 @@ The service-health script checks:
 - PostgreSQL database connectivity
 - Port conflicts
 
+**System Health Log (auto-recovery patterns):**
+```bash
+# Check for recurring auto-recovery patterns in the last 7 days
+sqlite3 ~/.statusboard/monitor.db "SELECT service, event_type, occurrence_count, first_seen, last_seen FROM system_health_log WHERE last_seen > datetime('now', '-7 days') ORDER BY occurrence_count DESC"
+```
+
+Flag services with high occurrence counts — these indicate instability that warrants root cause investigation even if auto-recovery is working. An `escalated = 1` row means the threshold was hit and MC was notified.
+
 **Manual checks (if needed):**
 - Review log files in /tmp/*.log for errors, warnings, patterns
 - Verify MCP server connections (check LibreChat logs for reconnections)
@@ -1093,6 +1101,10 @@ Look for:
 2. **Proposed programmatic replacement** (script, API endpoint, hook, or runtime query)
 3. **Effort estimate** (trivial/small/medium) to implement the replacement
 4. **Impact** (how many swarms/how often this cognitive load causes issues)
+
+---
+
+**Meta-note:** Check if any new recurring patterns discovered in this audit could be added to `system_health_log` for continuous tracking. The health log currently tracks `auto_recovery` events; other event types (e.g., `health_check_fail`, `config_drift`) can be added as new patterns emerge.
 
 ---
 
