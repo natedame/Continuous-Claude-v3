@@ -145,6 +145,16 @@ The port-audit script scans for ALL port patterns (known AND unknown), categoriz
 - Verify Caddy is running: `pgrep -f caddy` and check `~/local-ai/Caddyfile`
 - Check Caddy launchd service: `launchctl list | grep caddy`
 
+**Caddy Route Audit:**
+```bash
+~/local-ai/bin/caddy-audit              # Check Caddyfile vs ports.yaml
+~/local-ai/bin/caddy-audit --json       # JSON output
+```
+
+Verifies Caddyfile routes match ports.yaml entries. Detects stale routes and missing routes.
+- HIGH if port mismatches between Caddyfile and ports.yaml
+- MEDIUM if stale/orphan routes exist
+
 **Guardrails:**
 - Pre-commit hook exists: `ls -la ~/local-ai/.git/hooks/pre-commit`
 - Test hook catches bad patterns: `echo 'PORT=9999' | grep -E "PORT\s*=\s*[0-9]+"`
@@ -245,6 +255,17 @@ done
 **Reference:** Incident `2026-02-06-team-swarm-permissions-bypass-broken.md` — npm update overwrote wrapper, settings had wrong format, swarms prompted for permissions.
 
 ### 7. System Resources
+
+**Log Rotation:**
+```bash
+~/local-ai/bin/log-rotation-check              # Check log sizes
+~/local-ai/bin/log-rotation-check --json       # JSON output
+```
+
+Flags /tmp/*.log and /tmp/*.err files over size thresholds and Docker containers without log rotation config.
+- HIGH if any log over 100MB
+- MEDIUM if any log over 50MB
+
 - Check host system memory, CPU, disk usage
 - Review Docker VM resource allocation
 - Check for zombie processes, file descriptor leaks
@@ -579,6 +600,30 @@ git branch | grep 'backup-' | xargs git branch -D
 This is safe because unique commits are preserved on GitHub before local deletion. Do NOT delete before pushing.
 
 **Reference:** Incident `2026-02-05_deploy-auto-push-for-swarm-autonomy.md`
+
+**11j. LaunchAgent Plist Audit:**
+```bash
+~/local-ai/bin/plist-audit              # Check all LaunchAgent plists
+~/local-ai/bin/plist-audit --json       # JSON output
+```
+
+The plist-audit script checks:
+- ThrottleInterval set on all KeepAlive plists (prevents crash loops)
+- ProgramArguments reference existing scripts/binaries
+- KeepAlive plists are loaded in launchctl
+- CRITICAL if scripts referenced by plists don't exist
+- HIGH if ThrottleInterval missing on KeepAlive plists
+
+**11k. Deploy Trigger Runtime Health:**
+```bash
+~/local-ai/bin/deploy-trigger-health              # Process + state health
+~/local-ai/bin/deploy-trigger-health --json       # JSON output
+```
+
+Checks deploy-trigger process health, in-memory state map sizes, and memory usage via /debug/state endpoint.
+- HIGH if state maps exceed 1000 entries (memory leak indicator)
+- HIGH if process memory > 500MB
+- MEDIUM if any map > 100 entries
 
 ### 12. Autonomy Resource Limits (Forever Autonomous)
 
@@ -1075,6 +1120,10 @@ Look for:
 - Worktree audit: `/Users/natedame/local-ai/bin/worktree-audit`
 - Deploy health check: `/Users/natedame/local-ai/bin/deploy-health-check`
 - Git backup audit: `/Users/natedame/local-ai/bin/git-backup-audit`
+- Plist audit: `/Users/natedame/local-ai/bin/plist-audit`
+- Log rotation check: `/Users/natedame/local-ai/bin/log-rotation-check`
+- Caddy audit: `/Users/natedame/local-ai/bin/caddy-audit`
+- Deploy trigger health: `/Users/natedame/local-ai/bin/deploy-trigger-health`
 - Swarm CLAUDE.md (constitution): `~/local-ai/CLAUDE.md`
 - Env requirements: `~/local-ai/env-requirements.yaml`
 - Deploy trigger: `~/local-ai/bin/deploy-trigger.cjs`
