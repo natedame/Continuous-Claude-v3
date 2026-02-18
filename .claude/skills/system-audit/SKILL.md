@@ -1170,6 +1170,40 @@ This updates the timestamp checked by status dashboard. If audit goes >24 hours 
 
 ---
 
+### 16. Health Log Coverage Review (Discovery)
+
+**REQUIRED:** After completing all audit sections above, review what you checked and compare it to what the system health log currently tracks.
+
+```bash
+# Current health log coverage (what's being tracked)
+sqlite3 ~/.statusboard/monitor.db "SELECT DISTINCT service, event_type FROM system_health_log ORDER BY service"
+
+# Current monitor MONITORED_SERVICES list
+grep -A2 "key:" ~/local-ai/bin/monitor.js | grep "key:" | head -20
+```
+
+Based on the live checks you just performed in Sections 1-15, list any services or failure modes that:
+- Were checked manually in this audit but are NOT in the health log
+- Had issues discovered during this audit that would benefit from continuous tracking
+- Are monitored by swarm-monitor but don't log to system_health_log
+
+Output format:
+```
+## Health Log Coverage Review
+
+**Currently tracked:** [list services/events from health log]
+
+**Recommended additions:**
+- [service]: [event_type] — [why: what this audit found that should be tracked continuously]
+- ...
+
+**No action needed:** [services that are adequately covered]
+```
+
+This section makes each audit run a natural discovery mechanism for expanding health log coverage over time.
+
+---
+
 ## Scheduled Usage
 
 Run weekly or after any incident to:
@@ -1177,3 +1211,4 @@ Run weekly or after any incident to:
 2. Verify recommended fixes were implemented
 3. Track infrastructure health trends
 4. Continuously improve the audit process itself
+5. Discover new events to add to the system health log
