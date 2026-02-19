@@ -127,6 +127,30 @@ Global checks:
 - Verify ~/.zshrc swarm functions are correct
 - Verify environment variables and secrets management
 
+**4a. push-all Repo Coverage Audit:**
+
+`push-all` hardcodes a list of repos. Any repo with a remote that isn't in that list (and not under `~/projects/`) will silently be skipped — work pushed there won't be caught overnight.
+
+```bash
+# Extract hardcoded repos from push-all definition in ~/.zshrc
+HARDCODED=$(grep "local repos=(" ~/.zshrc | grep -oE '~/[a-zA-Z0-9_.~/-]+' | tr '\n' ' ')
+echo "push-all hardcoded repos: $HARDCODED"
+
+# Find all git repos with remotes on the machine (exclude noise)
+echo "--- All git repos with remotes ---"
+find ~ -maxdepth 3 -name ".git" -type d 2>/dev/null \
+  | grep -v '/\.' | grep -v node_modules | grep -v '\.venv' | grep -v worktrees \
+  | while read gitdir; do
+      repo=$(dirname "$gitdir")
+      git -C "$repo" remote get-url origin &>/dev/null && echo "$repo"
+    done | sort
+```
+
+Cross-reference: any repo in the "all repos" list that is NOT in `HARDCODED` and NOT under `~/projects/` is a miss. Flag as MEDIUM — work committed there won't be pushed by `push-all`.
+
+- MEDIUM for each uncovered repo found
+- OK if all repos with remotes are covered
+
 ### 5. Port Management System
 Port issues frequently cause bugs. The system uses `ports.yaml` as source of truth.
 
