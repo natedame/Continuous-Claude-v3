@@ -698,7 +698,7 @@ Reference: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
 
 ### 13. Monitor Infrastructure Audit
 
-The monitoring stack (NATS, swarm-monitor, Monitor Claude, monitor.db) is the detection layer for swarm issues. If monitoring is broken, incidents go undetected. This section validates every component end-to-end.
+The monitoring stack (NATS, monitor, Monitor Claude, monitor.db) is the detection layer for swarm issues. If monitoring is broken, incidents go undetected. This section validates every component end-to-end.
 
 **13a. NATS Container Health:**
 ```bash
@@ -721,15 +721,15 @@ fi
 - HIGH if auth not configured (unauthenticated pub/sub)
 - MEDIUM if config file missing
 
-**13b. swarm-monitor LaunchAgent:**
+**13b. monitor LaunchAgent:**
 ```bash
 # Verify LaunchAgent is loaded
-launchctl list | grep swarm-monitor
-# Expected: PID listed for com.local-ai.swarm-monitor
+launchctl list | grep com.local-ai.monitor
+# Expected: PID listed for com.local-ai.monitor
 
 # Check heartbeat freshness (should be within last 3 minutes)
-LAST_HB=$(sqlite3 ~/.statusboard/monitor.db "SELECT MAX(timestamp) FROM monitor_heartbeats WHERE component='swarm-monitor'")
-echo "Last swarm-monitor heartbeat: $LAST_HB"
+LAST_HB=$(sqlite3 ~/.statusboard/monitor.db "SELECT MAX(timestamp) FROM monitor_heartbeats WHERE component='monitor'")
+echo "Last monitor heartbeat: $LAST_HB"
 # Compare with current time — stale heartbeat means monitor is not running
 
 # Calculate staleness in seconds
@@ -1209,7 +1209,7 @@ grep -A2 "key:" ~/local-ai/bin/monitor.js | grep "key:" | head -20
 Based on the live checks you just performed in Sections 1-15, list any services or failure modes that:
 - Were checked manually in this audit but are NOT in the health log
 - Had issues discovered during this audit that would benefit from continuous tracking
-- Are monitored by swarm-monitor but don't log to system_health_log
+- Are monitored by monitor but don't log to system_health_log
 
 Output format:
 ```
