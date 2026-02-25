@@ -236,7 +236,7 @@ function isRateLimited(swarmName: string): boolean {
 }
 
 /**
- * Get recent output from transcript or tmux for the message content
+ * Get recent output from transcript for the message content
  */
 function getRecentOutput(): string {
   const swarmName = process.env.SWARM_NAME;
@@ -264,11 +264,8 @@ function getRecentOutput(): string {
       }
     }
 
-    // Fall back to tmux capture
-    return execSync(
-      'tmux capture-pane -t main -p -S -30 2>/dev/null || true',
-      { encoding: 'utf-8', timeout: 5000 }
-    ).trim();
+    // No transcript content available
+    return '';
   } catch {
     return '';
   }
