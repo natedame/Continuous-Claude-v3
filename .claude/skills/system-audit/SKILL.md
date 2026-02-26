@@ -129,7 +129,7 @@ Global checks:
 
 **4a. push-all Repo Coverage Audit:**
 
-`push-all` hardcodes a list of repos. Any repo with a remote that isn't in that list (and not under `~/projects/`) will silently be skipped — work pushed there won't be caught overnight.
+`push-all` hardcodes a list of repos. Any repo with a remote that isn't in that list (and not under `~/local-projects/`) will silently be skipped — work pushed there won't be caught overnight.
 
 ```bash
 # Extract hardcoded repos from push-all definition in ~/.zshrc
@@ -146,7 +146,7 @@ find ~ -maxdepth 3 -name ".git" -type d 2>/dev/null \
     done | sort
 ```
 
-Cross-reference: any repo in the "all repos" list that is NOT in `HARDCODED` and NOT under `~/projects/` is a miss. Flag as MEDIUM — work committed there won't be pushed by `push-all`.
+Cross-reference: any repo in the "all repos" list that is NOT in `HARDCODED` and NOT under `~/local-projects/` is a miss. Flag as MEDIUM — work committed there won't be pushed by `push-all`.
 
 - MEDIUM for each uncovered repo found
 - OK if all repos with remotes are covered
@@ -229,7 +229,7 @@ import json
 s = json.load(open('/home/swarm/.claude/settings.json'))
 tm = s.get('teammateMode')
 exp = s.get('env',{}).get('CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS')
-print('✓' if tm == 'tmux' else '✗', 'teammateMode:', tm)
+print('✓' if tm != 'tmux' else '✗ (tmux removed V7.3)', 'teammateMode:', tm)
 print('✓' if exp == '1' else '✗', 'AGENT_TEAMS env:', exp)
 " 2>/dev/null || echo "✗ Could not read settings.json"
 done
@@ -408,10 +408,11 @@ Swarms interpret documentation literally. Outdated or misleading docs cause conf
 **Reference:** `~/swarm-admin/docs/swarm-documentation-principles.md` (source of truth for swarm docs)
 
 **10a. Playwright Documentation Audit:**
+
+Run a manual search (automated audit script not present):
 ```bash
-~/local-ai/bin/playwright-docs-audit scan      # Find all Playwright mentions
-~/local-ai/bin/playwright-docs-audit report    # Summary with central doc status
-~/local-ai/bin/playwright-docs-audit cleanup   # Find files needing fixes
+grep -r "npx playwright test" ~/local-ai/CLAUDE.md ~/swarm-admin/docs/ 2>/dev/null
+grep -r "playwright-service" ~/local-ai/CLAUDE.md ~/swarm-admin/docs/ 2>/dev/null
 ```
 
 Key checks:
@@ -512,7 +513,7 @@ Deploy issues silently break swarm autonomy. These tests catch regressions from 
 
 **11a. Git Sync Verification:**
 ```bash
-# Verify deploy-service syncs with origin
+# Verify deploy-trigger pipeline is healthy
 cd ~/local-ai/content-need-manager
 git fetch origin main
 LOCAL=$(git rev-parse HEAD)
@@ -523,10 +524,18 @@ ORIGIN=$(git rev-parse origin/main)
 **11b. LangGraph LaunchAgents:**
 ```bash
 # All three should be loaded (exit code 0)
-launchctl list | grep -E "langgraph.server|cloudflare.langgraph-tunnel"
-# Expected: com.langgraph.server, com.cloudflare.langgraph-tunnel
+launchctl list | grep -E "local-ai.langgraph-server|cloudflare.langgraph-tunnel"
+# Expected: com.local-ai.langgraph-server, com.cloudflare.langgraph-tunnel
 # NOT expected: com.langgraph.cors-proxy (removed 2026-02-05)
 ```
+
+**11b2. CNMaster LaunchAgents:**
+```bash
+# Both cnmaster services should be loaded
+launchctl list | grep -E "local-ai.cnmaster-core|local-ai.cnmaster-curator"
+# Expected: com.local-ai.cnmaster-core, com.local-ai.cnmaster-curator
+```
+- HIGH if either cnmaster service is not loaded (content pipeline degraded)
 
 **11c. Stable Tunnel Health:**
 ```bash
@@ -550,16 +559,16 @@ lsof -ti:2024 | wc -l
 
 **11e. LaunchAgent vs nohup Conflicts:**
 ```bash
-# Check for services with LaunchAgents that deploy-service starts with nohup
-# This causes competing processes (LaunchAgent restarts what nohup killed)
+# V7.3 pipeline: deploy-trigger.cjs → merge.sh → build-deploy.sh
+# Check for services where build-deploy.sh uses nohup (conflicts with LaunchAgent KeepAlive)
 for plist in ~/Library/LaunchAgents/com.local-ai.*.plist; do
     name=$(basename "$plist" .plist | sed 's/com.local-ai.//')
     keepalive=$(grep -A1 "KeepAlive" "$plist" 2>/dev/null | grep -q "true" && echo "YES" || echo "no")
     loaded=$(launchctl list 2>/dev/null | grep "com.local-ai.$name" > /dev/null && echo "LOADED" || echo "not loaded")
     if [[ "$keepalive" == "YES" && "$loaded" == "LOADED" ]]; then
-        # Check if deploy-service uses nohup for this service
-        if grep -q "nohup.*$name\|$name.*nohup\|$name)" ~/local-ai/bin/deploy-service 2>/dev/null; then
-            echo "⚠️ CONFLICT: $name has LaunchAgent+KeepAlive but deploy-service uses nohup"
+        # Check if build-deploy.sh (V7.3 pipeline) uses nohup for this service
+        if grep -q "nohup.*$name\|$name.*nohup" ~/local-ai/bin/build-deploy.sh 2>/dev/null; then
+            echo "⚠️ CONFLICT: $name has LaunchAgent+KeepAlive but build-deploy.sh uses nohup"
         fi
     fi
 done
@@ -613,7 +622,6 @@ Deploy-service creates `backup/*` branches when local has unpushed commits (pres
 
 The script checks:
 - `~/local-ai` for `backup/*` branches
-- `~/projects/PRO-site` for `backup/*` branches
 - Reports commits ahead of main, last commit date/subject
 - Provides recovery instructions
 
@@ -968,6 +976,39 @@ ls -la ~/.cache/swarm-terminals/ 2>/dev/null
 - MEDIUM if headless swarms detected (user may have lost connection)
 - HIGH if sentinel not running (headless detection disabled)
 
+**13n. Host Agents Health:**
+```bash
+# Check Host Monitor pid
+if [ -f ~/.claude/host-agents/monitor.pid ]; then
+  PID=$(cat ~/.claude/host-agents/monitor.pid)
+  kill -0 "$PID" 2>/dev/null && echo "✓ Host Monitor running (PID $PID)" || echo "✗ Host Monitor pid stale (PID $PID not alive)"
+else
+  echo "✗ Host Monitor pid file missing (~/.claude/host-agents/monitor.pid)"
+fi
+
+# Check Host Runner pid
+if [ -f ~/.claude/host-agents/runner.pid ]; then
+  PID=$(cat ~/.claude/host-agents/runner.pid)
+  kill -0 "$PID" 2>/dev/null && echo "✓ Host Runner running (PID $PID)" || echo "✗ Host Runner pid stale"
+else
+  echo "- Host Runner pid file absent (only an issue if runner should be active)"
+fi
+
+# Check NATS server container
+docker ps --filter "name=nats-server" --format "{{.Names}} {{.Status}}" | grep -q "nats-server" \
+  && echo "✓ nats-server container running" \
+  || echo "✗ CRITICAL: nats-server container not running — NATS messaging dead"
+
+# Check host-nats-inbox processes (one per host agent using NATS messaging)
+INBOX_PROCS=$(pgrep -f "host-nats-inbox" | wc -l | tr -d ' ')
+echo "host-nats-inbox processes: $INBOX_PROCS"
+[ "$INBOX_PROCS" -gt 0 ] && echo "✓ NATS inbox process(es) running" || echo "✗ No host-nats-inbox processes — Host Command cannot receive NATS messages"
+```
+- CRITICAL if nats-server container is not running
+- CRITICAL if no host-nats-inbox processes and Host Command/Monitor are active
+- HIGH if Host Monitor pid is stale (monitoring is blind)
+- MEDIUM if Host Runner pid is absent but runner should be processing queue
+
 ## Execution Process
 
 1. **Phase 1: Audit** - Systematically investigate each area above
@@ -1153,7 +1194,6 @@ Look for:
 - Service health: `/Users/natedame/local-ai/bin/service-health`
 - Swarm health: `/Users/natedame/local-ai/bin/swarm-health`
 - DR check: `/Users/natedame/local-ai/bin/disaster-recovery-check`
-- Playwright docs audit: `/Users/natedame/local-ai/bin/playwright-docs-audit`
 - Swarm leakage audit: `/Users/natedame/local-ai/bin/swarm-leakage-audit`
 - Networking audit: `/Users/natedame/local-ai/bin/networking-audit`
 - Path audit: `/Users/natedame/local-ai/bin/path-audit`
@@ -1168,6 +1208,8 @@ Look for:
 - Swarm CLAUDE.md (constitution): `~/local-ai/CLAUDE.md`
 - Env requirements: `~/local-ai/env-requirements.yaml`
 - Deploy trigger: `~/local-ai/bin/deploy-trigger.cjs`
+- Deploy merge script: `~/local-ai/bin/merge.sh`
+- Deploy build script: `~/local-ai/bin/build-deploy.sh`
 - Zshrc (swarm functions): `~/.zshrc`
 - Caddyfile: `/Users/natedame/local-ai/Caddyfile`
 - Swarm config template: `~/.claude-swarm/`
