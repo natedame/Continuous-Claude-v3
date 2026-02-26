@@ -176,7 +176,9 @@ rp-cli --exec-file ~/scripts/daily-export.rp
 | `-d <cmd>` | Detailed help for command |
 | `--wait-for-server 5` | Wait for connection (scripts) |
 
-## Async Operations (tmux)
+## Async Operations (deprecated)
+
+> **Note:** This section is deprecated since V4.5 (swarm container rebuild). Async operations no longer use tmux.
 
 For long-running operations like `builder`, use the async script:
 

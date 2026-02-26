@@ -106,8 +106,8 @@ The swarm-health script checks per-swarm:
 - SWARM_MAX_AGENTS environment variable
 - PID limits (docker inspect)
 - Memory usage (docker stats)
-- Tmux responsiveness
-- Orphan tmux windows
+- nats-inbox responsiveness
+- Orphan Claude processes
 - PLAN.md for BLOCKED/STUCK markers
 - Stale debug logs (>7 days)
 
@@ -690,8 +690,8 @@ find ~/.claude-swarm-*/debug -name "*.txt" -mtime +7 -print | head -5
 
 **Orphan Detection:**
 ```bash
-# Check for tmux windows without active Claude process
-docker exec swarm-<name> tmux list-windows -t main -F "#{window_name}"
+# Check for containers without active nats-inbox process
+docker exec swarm-<name> pgrep -f nats-inbox
 ```
 
 Reference: `~/swarm-admin/incidents/2026-02-02_autonomy-forever-e2e-tests.md`
@@ -749,13 +749,18 @@ fi
 PENDING=$(sqlite3 ~/.statusboard/monitor.db "SELECT COUNT(*) FROM monitor_actions WHERE decision_level='PENDING'")
 echo "Pending alerts: $PENDING"
 
-# If pending alerts exist, verify Monitor Claude tmux session is alive
+# If pending alerts exist, verify Monitor Claude process is alive
 if [ "$PENDING" -gt 0 ]; then
-  tmux has-session -t monitor-claude 2>/dev/null && echo "✓ monitor-claude session exists" || echo "✗ CRITICAL: monitor-claude session MISSING with $PENDING pending alerts"
+  PIDFILE=~/.claude/host-agents/monitor.pid
+  if [ -f "$PIDFILE" ] && kill -0 $(cat "$PIDFILE") 2>/dev/null; then
+    echo "✓ monitor-claude process running (PID $(cat "$PIDFILE"))"
+  else
+    echo "✗ CRITICAL: monitor-claude process MISSING with $PENDING pending alerts"
+  fi
 fi
 ```
-- CRITICAL if pending alerts exist but monitor-claude session is missing
-- MEDIUM if no pending alerts (session not required)
+- CRITICAL if pending alerts exist but monitor-claude process is missing
+- MEDIUM if no pending alerts (process not required)
 
 **13d. monitor.db Integrity:**
 ```bash
@@ -1225,6 +1230,48 @@ Output format:
 ```
 
 This section makes each audit run a natural discovery mechanism for expanding health log coverage over time.
+
+---
+
+### 17. Swarm Communication Audit
+
+Query `swarm_msg_audit` for unauthorized substantive direction sent to swarms in the last 24 hours:
+
+```bash
+sqlite3 ~/.statusboard/monitor.db "
+SELECT sender, swarm, message, sent_at
+FROM swarm_msg_audit
+WHERE sent_at >= datetime('now', '-24 hours')
+  AND (
+    message LIKE '%yes%'
+    OR message LIKE '%no%'
+    OR message LIKE '%apply%'
+    OR message LIKE '%approved%'
+    OR message LIKE '%confirmed%'
+    OR message LIKE '%go ahead%'
+    OR message LIKE '%sounds good%'
+  )
+  AND sender NOT LIKE '%nate%'
+  AND sender NOT LIKE '%human%'
+ORDER BY sent_at DESC;
+"
+```
+
+Flag any rows where a non-human sender sent approval/direction language to a swarm. These represent potential violations of the swarm-msg content constraints defined in `~/host-command/CLAUDE.md`.
+
+**Severity:**
+- HIGH if any row found — a subagent sent substantive direction to a swarm without Nate's involvement
+- OK if zero rows (or all rows are from Nate/human senders)
+
+**Full audit log (all messages, last 24h):**
+```bash
+sqlite3 ~/.statusboard/monitor.db "
+SELECT sender, swarm, message, sent_at
+FROM swarm_msg_audit
+WHERE sent_at >= datetime('now', '-24 hours')
+ORDER BY sent_at DESC;
+"
+```
 
 ---
 
