@@ -4,7 +4,7 @@ services:
     container_name: continuous-claude-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-claude}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-GZo20ZpZ6j8gK17o6QjaXpvajE72Kd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD (the setup wizard writes it to opc/.env)}
       POSTGRES_DB: ${POSTGRES_DB:-continuous_claude}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
